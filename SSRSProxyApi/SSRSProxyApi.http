@@ -1,0 +1,6 @@
+@SSRSProxyApi_HostAddress = http://localhost:5205
+
+GET {{SSRSProxyApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
