@@ -20,6 +20,43 @@ namespace SSRSProxyApi.Controllers
         }
 
         /// <summary>
+        /// Test SSRS connectivity and basic functionality
+        /// </summary>
+        /// <returns>SSRS connection status and available reports</returns>
+        [Authorize]
+        [HttpGet("test-connection")]
+        public async Task<ActionResult> TestSSRSConnection()
+        {
+            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            try
+            {
+                _logger.LogInformation("User '{User}' testing SSRS connection", currentUser);
+                
+                var folderContent = await _ssrsService.BrowseFolderAsync("/");
+                
+                return Ok(new 
+                { 
+                    message = "SSRS connection successful", 
+                    user = currentUser,
+                    reportCount = folderContent.Reports.Count,
+                    folderCount = folderContent.Folders.Count,
+                    reports = folderContent.Reports.Select(r => new { r.Name, r.Path }).Take(5),
+                    timestamp = DateTime.Now
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SSRS connection test failed for user '{User}'", currentUser);
+                return StatusCode(500, new { 
+                    message = "SSRS connection failed", 
+                    error = ex.Message, 
+                    user = currentUser,
+                    timestamp = DateTime.Now 
+                });
+            }
+        }
+
+        /// <summary>
         /// Browse folder structure with both folders and reports
         /// </summary>
         /// <param name="folderPath">Folder path to browse (default: root "/")</param>
@@ -28,9 +65,9 @@ namespace SSRSProxyApi.Controllers
         [HttpGet("browse")]
         public async Task<ActionResult<FolderContent>> BrowseFolder([FromQuery] string folderPath = "/")
         {
+            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
             try
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogInformation("User '{User}' browsing folder: {FolderPath}", currentUser, folderPath);
                 
                 var folderContent = await _ssrsService.BrowseFolderAsync(folderPath);
@@ -38,7 +75,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (Exception ex)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogError(ex, "Error browsing folder for user '{User}': {FolderPath}", currentUser, folderPath);
                 return StatusCode(500, new { message = "Error browsing folder", error = ex.Message, user = currentUser });
             }
@@ -53,9 +89,9 @@ namespace SSRSProxyApi.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<ReportInfo>>> GetReports([FromQuery] string folderPath = "/")
         {
+            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
             try
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogInformation("User '{User}' retrieving reports from folder: {FolderPath}", currentUser, folderPath);
                 
                 var reports = await _ssrsService.GetReportsAsync(folderPath);
@@ -63,7 +99,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (Exception ex)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogError(ex, "Error retrieving reports for user '{User}': {FolderPath}", currentUser, folderPath);
                 return StatusCode(500, new { message = "Error retrieving reports", error = ex.Message, user = currentUser });
             }
@@ -78,10 +113,9 @@ namespace SSRSProxyApi.Controllers
         [HttpGet("parameters")]
         public async Task<ActionResult<IEnumerable<ReportParameter>>> GetReportParameters([FromQuery] string reportPath)
         {
+            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
             try
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
-                
                 if (string.IsNullOrEmpty(reportPath))
                 {
                     return BadRequest(new { message = "Report path is required as query parameter" });
@@ -99,7 +133,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (SSRSException ssrsEx)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogWarning("SSRS error for user '{User}' retrieving parameters for report '{ReportPath}': {ErrorCode} - {Message}", 
                     currentUser, reportPath, ssrsEx.ErrorCode, ssrsEx.Message);
                 
@@ -113,7 +146,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (Exception ex)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogError(ex, "Unexpected error retrieving parameters for user '{User}' for report: {ReportPath}", currentUser, reportPath);
                 return StatusCode(500, new { message = "An unexpected error occurred while retrieving report parameters", error = ex.Message, user = currentUser });
             }
@@ -128,10 +160,9 @@ namespace SSRSProxyApi.Controllers
         [HttpPost("render")]
         public async Task<ActionResult> RenderReport([FromBody] RenderRequest request)
         {
+            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
             try
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
-                
                 if (string.IsNullOrEmpty(request.ReportPath))
                 {
                     return BadRequest(new { message = "Report path is required" });
@@ -153,7 +184,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (SSRSException ssrsEx)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogWarning("SSRS error for user '{User}' rendering report '{ReportPath}': {ErrorCode} - {Message}", 
                     currentUser, request.ReportPath, ssrsEx.ErrorCode, ssrsEx.Message);
                 
@@ -167,7 +197,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (Exception ex)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogError(ex, "Unexpected error rendering report for user '{User}': {ReportPath}", currentUser, request.ReportPath);
                 return StatusCode(500, new { message = "An unexpected error occurred while rendering the report", error = ex.Message, user = currentUser });
             }
@@ -183,10 +212,9 @@ namespace SSRSProxyApi.Controllers
         [HttpPost("render/{format}")]
         public async Task<ActionResult> RenderReportInFormat(string format, [FromBody] RenderRequest request)
         {
+            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
             try
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
-                
                 if (string.IsNullOrEmpty(request.ReportPath))
                 {
                     return BadRequest(new { message = "Report path is required" });
@@ -218,7 +246,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (SSRSException ssrsEx)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogWarning("SSRS error for user '{User}' rendering report '{ReportPath}' in format '{Format}': {ErrorCode} - {Message}", 
                     currentUser, request.ReportPath, format, ssrsEx.ErrorCode, ssrsEx.Message);
                 
@@ -233,7 +260,6 @@ namespace SSRSProxyApi.Controllers
             }
             catch (Exception ex)
             {
-                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
                 _logger.LogError(ex, "Unexpected error rendering report for user '{User}': {ReportPath} in format: {Format}", currentUser, request.ReportPath, format);
                 return StatusCode(500, new { message = "An unexpected error occurred while rendering the report", error = ex.Message, user = currentUser, format });
             }
