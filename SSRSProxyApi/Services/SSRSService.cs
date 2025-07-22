@@ -1,10 +1,7 @@
 using Microsoft.Extensions.Options;
 using SSRSProxyApi.Models;
 using System.Net;
-using System.ServiceModel;
-using System.ServiceModel.Channels;
 using System.Text;
-using System.Xml;
 using System.Xml.Linq;
 using System.Security.Principal;
 
@@ -100,12 +97,18 @@ namespace SSRSProxyApi.Services
 
         public async Task<IEnumerable<ReportInfo>> GetReportsAsync(string folderPath = "/")
         {
+            var folderContent = await BrowseFolderAsync(folderPath);
+            return folderContent.Reports;
+        }
+
+        public async Task<FolderContent> BrowseFolderAsync(string folderPath = "/")
+        {
             using var httpClient = CreateHttpClientForCurrentUser();
             
             try
             {
                 var currentUser = _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "Anonymous";
-                _logger.LogInformation("User '{User}' attempting to retrieve reports from folder: {FolderPath}", currentUser, folderPath);
+                _logger.LogInformation("User '{User}' browsing folder: {FolderPath}", currentUser, folderPath);
                 _logger.LogInformation("Using SSRS endpoint: {Endpoint}", _config.SoapEndpoints.ReportService);
                 
                 var soapEnvelope = CreateListChildrenSoapEnvelope(folderPath);
@@ -150,16 +153,16 @@ namespace SSRSProxyApi.Services
                 var responseContent = await response.Content.ReadAsStringAsync();
                 _logger.LogDebug("SSRS Response: {Response}", responseContent);
                 
-                var reports = ParseListChildrenResponse(responseContent);
-                _logger.LogInformation("Successfully retrieved {ReportCount} reports for user '{User}' from folder: {FolderPath}", 
-                    reports.Count(), currentUser, folderPath);
+                var folderContent = ParseListChildrenResponseToFolderContent(responseContent, folderPath);
+                _logger.LogInformation("Successfully retrieved {FolderCount} folders and {ReportCount} reports for user '{User}' from folder: {FolderPath}", 
+                    folderContent.Folders.Count, folderContent.Reports.Count, currentUser, folderPath);
                 
-                return reports;
+                return folderContent;
             }
             catch (Exception ex)
             {
                 var currentUser = _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "Anonymous";
-                _logger.LogError(ex, "Error retrieving reports for user '{User}' from folder: {FolderPath}", currentUser, folderPath);
+                _logger.LogError(ex, "Error browsing folder for user '{User}': {FolderPath}", currentUser, folderPath);
                 throw;
             }
         }
@@ -189,7 +192,10 @@ namespace SSRSProxyApi.Services
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogError("SSRS Error Response for user '{User}': {ErrorContent}", currentUser, errorContent);
-                    throw new HttpRequestException($"SSRS request failed for user '{currentUser}' with status {response.StatusCode}: {errorContent}");
+                    
+                    // Parse SSRS error to determine appropriate HTTP status code
+                    var (statusCode, errorCode, errorMessage) = ParseSSRSError(errorContent);
+                    throw new SSRSException(statusCode, errorCode, $"Failed to retrieve parameters for report '{reportPath}': {errorMessage}");
                 }
                 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -201,29 +207,40 @@ namespace SSRSProxyApi.Services
                 
                 return parameters;
             }
+            catch (SSRSException)
+            {
+                // Re-throw SSRS exceptions as-is
+                throw;
+            }
             catch (Exception ex)
             {
                 var currentUser = _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "Anonymous";
                 _logger.LogError(ex, "Error retrieving parameters for user '{User}' for report: {ReportPath}", currentUser, reportPath);
-                throw;
+                throw new SSRSException(500, "UnexpectedError", $"An unexpected error occurred while retrieving parameters for report '{reportPath}'", ex);
             }
         }
 
-        public async Task<byte[]> RenderReportAsync(string reportPath, Dictionary<string, object> parameters)
+        public async Task<byte[]> RenderReportAsync(string reportPath, Dictionary<string, object> parameters, string format = "PDF")
         {
             using var httpClient = CreateHttpClientForCurrentUser();
             
             try
             {
                 var currentUser = _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "Anonymous";
-                _logger.LogInformation("User '{User}' attempting to render report: {ReportPath}", currentUser, reportPath);
+                _logger.LogInformation("User '{User}' attempting to render report: {ReportPath} in format: {Format}", currentUser, reportPath, format);
                 
                 // First load the report
                 var loadSoapEnvelope = CreateLoadReportSoapEnvelope(reportPath);
                 var loadContent = new StringContent(loadSoapEnvelope, Encoding.UTF8, "text/xml");
                 
                 var loadResponse = await httpClient.PostAsync(_config.SoapEndpoints.ReportExecution, loadContent);
-                loadResponse.EnsureSuccessStatusCode();
+                
+                if (!loadResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await loadResponse.Content.ReadAsStringAsync();
+                    var (statusCode, errorCode, errorMessage) = ParseSSRSError(errorContent);
+                    throw new SSRSException(statusCode, errorCode, $"Failed to load report '{reportPath}': {errorMessage}");
+                }
                 
                 var loadResponseContent = await loadResponse.Content.ReadAsStringAsync();
                 var executionId = ExtractExecutionId(loadResponseContent);
@@ -235,29 +252,113 @@ namespace SSRSProxyApi.Services
                     var setParamsContent = new StringContent(setParamsSoapEnvelope, Encoding.UTF8, "text/xml");
                     
                     var setParamsResponse = await httpClient.PostAsync(_config.SoapEndpoints.ReportExecution, setParamsContent);
-                    setParamsResponse.EnsureSuccessStatusCode();
+                    
+                    if (!setParamsResponse.IsSuccessStatusCode)
+                    {
+                        var errorContent = await setParamsResponse.Content.ReadAsStringAsync();
+                        var (statusCode, errorCode, errorMessage) = ParseSSRSError(errorContent);
+                        throw new SSRSException(statusCode, errorCode, $"Failed to set parameters for report '{reportPath}': {errorMessage}");
+                    }
                 }
                 
-                // Render the report
-                var renderSoapEnvelope = CreateRenderSoapEnvelope(executionId);
+                // Render the report in specified format
+                var renderSoapEnvelope = CreateRenderSoapEnvelope(executionId, format);
                 var renderContent = new StringContent(renderSoapEnvelope, Encoding.UTF8, "text/xml");
                 
                 var renderResponse = await httpClient.PostAsync(_config.SoapEndpoints.ReportExecution, renderContent);
-                renderResponse.EnsureSuccessStatusCode();
+                
+                if (!renderResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await renderResponse.Content.ReadAsStringAsync();
+                    var (statusCode, errorCode, errorMessage) = ParseSSRSError(errorContent);
+                    throw new SSRSException(statusCode, errorCode, $"Failed to render report '{reportPath}' in format '{format}': {errorMessage}");
+                }
                 
                 var renderResponseContent = await renderResponse.Content.ReadAsStringAsync();
                 var reportBytes = ExtractRenderedReport(renderResponseContent);
                 
-                _logger.LogInformation("Successfully rendered report for user '{User}': {ReportPath} ({Size} bytes)", 
-                    currentUser, reportPath, reportBytes.Length);
+                _logger.LogInformation("Successfully rendered report for user '{User}': {ReportPath} in format {Format} ({Size} bytes)", 
+                    currentUser, reportPath, format, reportBytes.Length);
                 
                 return reportBytes;
+            }
+            catch (SSRSException)
+            {
+                // Re-throw SSRS exceptions as-is
+                throw;
             }
             catch (Exception ex)
             {
                 var currentUser = _httpContextAccessor.HttpContext?.User?.Identity?.Name ?? "Anonymous";
-                _logger.LogError(ex, "Error rendering report for user '{User}': {ReportPath}", currentUser, reportPath);
-                throw;
+                _logger.LogError(ex, "Error rendering report for user '{User}': {ReportPath} in format: {Format}", currentUser, reportPath, format);
+                throw new SSRSException(500, "UnexpectedError", $"An unexpected error occurred while rendering report '{reportPath}'", ex);
+            }
+        }
+
+        /// <summary>
+        /// Parse SSRS SOAP error response to determine appropriate HTTP status code and error details
+        /// </summary>
+        private static (int statusCode, string errorCode, string errorMessage) ParseSSRSError(string errorContent)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(errorContent))
+                {
+                    return (500, "UnknownError", "Unknown SSRS error occurred");
+                }
+
+                // Check for common SSRS error patterns
+                if (errorContent.Contains("rsItemNotFound") || errorContent.Contains("The item") && errorContent.Contains("cannot be found"))
+                {
+                    return (404, "ItemNotFound", "Report or folder not found");
+                }
+                
+                if (errorContent.Contains("rsAccessDenied") || errorContent.Contains("not authorized"))
+                {
+                    return (403, "AccessDenied", "Access denied to the requested report");
+                }
+                
+                if (errorContent.Contains("rsInvalidParameter") || errorContent.Contains("parameter") && errorContent.Contains("invalid"))
+                {
+                    return (400, "InvalidParameter", "Invalid parameter provided");
+                }
+                
+                if (errorContent.Contains("rsParameterTypeMismatch"))
+                {
+                    return (400, "ParameterTypeMismatch", "Parameter type mismatch");
+                }
+
+                if (errorContent.Contains("rsAuthenticationFailed") || errorContent.Contains("authentication"))
+                {
+                    return (401, "AuthenticationFailed", "Authentication failed");
+                }
+
+                // Extract error message from SOAP fault if available
+                if (errorContent.Contains("<faultstring>"))
+                {
+                    var start = errorContent.IndexOf("<faultstring>") + "<faultstring>".Length;
+                    var end = errorContent.IndexOf("</faultstring>");
+                    if (end > start)
+                    {
+                        var faultString = errorContent.Substring(start, end - start);
+                        // Decode HTML entities
+                        faultString = System.Net.WebUtility.HtmlDecode(faultString);
+                        
+                        // Determine status code based on fault string content
+                        if (faultString.Contains("not found") || faultString.Contains("does not exist"))
+                        {
+                            return (404, "ItemNotFound", faultString);
+                        }
+                        
+                        return (400, "SSRSError", faultString);
+                    }
+                }
+
+                return (500, "SSRSError", "SSRS server error occurred");
+            }
+            catch
+            {
+                return (500, "ParseError", "Failed to parse SSRS error response");
             }
         }
 
@@ -285,10 +386,7 @@ namespace SSRSProxyApi.Services
     <soap:Body>
         <GetReportParameters xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
             <Report>{reportPath}</Report>
-            <HistoryID></HistoryID>
             <ForRendering>true</ForRendering>
-            <Values></Values>
-            <Credentials></Credentials>
         </GetReportParameters>
     </soap:Body>
 </soap:Envelope>";
@@ -303,7 +401,6 @@ namespace SSRSProxyApi.Services
     <soap:Body>
         <LoadReport xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
             <Report>{reportPath}</Report>
-            <HistoryID></HistoryID>
         </LoadReport>
     </soap:Body>
 </soap:Envelope>";
@@ -314,12 +411,13 @@ namespace SSRSProxyApi.Services
             var paramXml = string.Join("", parameters.Select(p => 
                 $"<ParameterValue><Name>{p.Key}</Name><Value>{p.Value}</Value></ParameterValue>"));
             
-            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?
 <soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
                xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
                xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
     <soap:Body>
         <SetExecutionParameters xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <ExecutionID>{executionId}</ExecutionID>
             <Parameters>{paramXml}</Parameters>
             <ParameterLanguage>en-us</ParameterLanguage>
         </SetExecutionParameters>
@@ -327,15 +425,27 @@ namespace SSRSProxyApi.Services
 </soap:Envelope>";
         }
 
-        private string CreateRenderSoapEnvelope(string executionId)
+        private string CreateRenderSoapEnvelope(string executionId, string format = "PDF")
         {
+            // Map common format names to SSRS format codes
+            var ssrsFormat = format.ToUpper() switch
+            {
+                "PDF" => "PDF",
+                "EXCEL" => "EXCELOPENXML",
+                "WORD" => "WORDOPENXML", 
+                "CSV" => "CSV",
+                "XML" => "XML",
+                "IMAGE" => "IMAGE",
+                _ => "PDF"
+            };
+
             return $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
                xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
                xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
     <soap:Body>
         <Render xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
-            <Format>PDF</Format>
+            <Format>{ssrsFormat}</Format>
             <DeviceInfo></DeviceInfo>
         </Render>
     </soap:Body>
@@ -360,6 +470,46 @@ namespace SSRSProxyApi.Services
                           });
             
             return items.ToList();
+        }
+
+        private FolderContent ParseListChildrenResponseToFolderContent(string responseXml, string folderPath)
+        {
+            var doc = XDocument.Parse(responseXml);
+            var ns = XNamespace.Get("http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices");
+            
+            var catalogItems = doc.Descendants(ns + "CatalogItem");
+            
+            var folders = catalogItems
+                .Where(item => item.Element(ns + "Type")?.Value == "Folder")
+                .Select(item => new FolderInfo
+                {
+                    Name = item.Element(ns + "Name")?.Value ?? "",
+                    Path = item.Element(ns + "Path")?.Value ?? "",
+                    CreatedDate = DateTime.TryParse(item.Element(ns + "CreationDate")?.Value, out var created) ? created : DateTime.MinValue,
+                    ModifiedDate = DateTime.TryParse(item.Element(ns + "ModifiedDate")?.Value, out var modified) ? modified : DateTime.MinValue,
+                    Description = item.Element(ns + "Description")?.Value ?? ""
+                })
+                .ToList();
+
+            var reports = catalogItems
+                .Where(item => item.Element(ns + "Type")?.Value == "Report")
+                .Select(item => new ReportInfo
+                {
+                    Name = item.Element(ns + "Name")?.Value ?? "",
+                    Path = item.Element(ns + "Path")?.Value ?? "",
+                    Type = item.Element(ns + "Type")?.Value ?? "",
+                    CreatedDate = DateTime.TryParse(item.Element(ns + "CreationDate")?.Value, out var created) ? created : DateTime.MinValue,
+                    ModifiedDate = DateTime.TryParse(item.Element(ns + "ModifiedDate")?.Value, out var modified) ? modified : DateTime.MinValue,
+                    Description = item.Element(ns + "Description")?.Value ?? ""
+                })
+                .ToList();
+
+            return new FolderContent
+            {
+                CurrentPath = folderPath,
+                Folders = folders,
+                Reports = reports
+            };
         }
 
         private IEnumerable<ReportParameter> ParseGetReportParametersResponse(string responseXml)

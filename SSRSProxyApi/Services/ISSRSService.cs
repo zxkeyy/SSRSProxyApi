@@ -5,7 +5,8 @@ namespace SSRSProxyApi.Services
     public interface ISSRSService
     {
         Task<IEnumerable<ReportInfo>> GetReportsAsync(string folderPath = "/");
+        Task<FolderContent> BrowseFolderAsync(string folderPath = "/");
         Task<IEnumerable<ReportParameter>> GetReportParametersAsync(string reportPath);
-        Task<byte[]> RenderReportAsync(string reportPath, Dictionary<string, object> parameters);
+        Task<byte[]> RenderReportAsync(string reportPath, Dictionary<string, object> parameters, string format = "PDF");
     }
 }

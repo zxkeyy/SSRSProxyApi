@@ -20,44 +20,52 @@ namespace SSRSProxyApi.Controllers
         }
 
         /// <summary>
-        /// Get all reports under the root folder (/) - Test endpoint without auth
+        /// Browse folder structure with both folders and reports
         /// </summary>
-        /// <returns>List of reports</returns>
-        [AllowAnonymous]
-        [HttpGet("test")]
-        public async Task<ActionResult<IEnumerable<ReportInfo>>> GetReportsTest()
+        /// <param name="folderPath">Folder path to browse (default: root "/")</param>
+        /// <returns>Folder contents with folders and reports</returns>
+        [Authorize]
+        [HttpGet("browse")]
+        public async Task<ActionResult<FolderContent>> BrowseFolder([FromQuery] string folderPath = "/")
         {
             try
             {
-                _logger.LogInformation("Testing SSRS connection - retrieving reports from root folder");
-                var reports = await _ssrsService.GetReportsAsync("/");
-                return Ok(reports);
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogInformation("User '{User}' browsing folder: {FolderPath}", currentUser, folderPath);
+                
+                var folderContent = await _ssrsService.BrowseFolderAsync(folderPath);
+                return Ok(folderContent);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving reports");
-                return StatusCode(500, new { message = "Error retrieving reports", error = ex.Message, innerException = ex.InnerException?.Message });
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogError(ex, "Error browsing folder for user '{User}': {FolderPath}", currentUser, folderPath);
+                return StatusCode(500, new { message = "Error browsing folder", error = ex.Message, user = currentUser });
             }
         }
 
         /// <summary>
-        /// Get all reports under the root folder (/)
+        /// Get reports in a specific folder (legacy endpoint)
         /// </summary>
+        /// <param name="folderPath">Folder path (default: root "/")</param>
         /// <returns>List of reports</returns>
         [Authorize]
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<ReportInfo>>> GetReports()
+        public async Task<ActionResult<IEnumerable<ReportInfo>>> GetReports([FromQuery] string folderPath = "/")
         {
             try
             {
-                _logger.LogInformation("Retrieving reports from root folder");
-                var reports = await _ssrsService.GetReportsAsync("/");
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogInformation("User '{User}' retrieving reports from folder: {FolderPath}", currentUser, folderPath);
+                
+                var reports = await _ssrsService.GetReportsAsync(folderPath);
                 return Ok(reports);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving reports");
-                return StatusCode(500, new { message = "Error retrieving reports", error = ex.Message });
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogError(ex, "Error retrieving reports for user '{User}': {FolderPath}", currentUser, folderPath);
+                return StatusCode(500, new { message = "Error retrieving reports", error = ex.Message, user = currentUser });
             }
         }
 
@@ -72,6 +80,8 @@ namespace SSRSProxyApi.Controllers
         {
             try
             {
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                
                 if (string.IsNullOrEmpty(reportPath))
                 {
                     return BadRequest(new { message = "Report path is required as query parameter" });
@@ -83,19 +93,34 @@ namespace SSRSProxyApi.Controllers
                     reportPath = "/" + reportPath;
                 }
 
-                _logger.LogInformation("Retrieving parameters for report: {ReportPath}", reportPath);
+                _logger.LogInformation("User '{User}' retrieving parameters for report: {ReportPath}", currentUser, reportPath);
                 var parameters = await _ssrsService.GetReportParametersAsync(reportPath);
                 return Ok(parameters);
             }
+            catch (SSRSException ssrsEx)
+            {
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogWarning("SSRS error for user '{User}' retrieving parameters for report '{ReportPath}': {ErrorCode} - {Message}", 
+                    currentUser, reportPath, ssrsEx.ErrorCode, ssrsEx.Message);
+                
+                return StatusCode(ssrsEx.HttpStatusCode, new 
+                { 
+                    message = ssrsEx.Message, 
+                    errorCode = ssrsEx.ErrorCode,
+                    user = currentUser,
+                    reportPath = reportPath
+                });
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving parameters for report: {ReportPath}", reportPath);
-                return StatusCode(500, new { message = "Error retrieving report parameters", error = ex.Message });
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogError(ex, "Unexpected error retrieving parameters for user '{User}' for report: {ReportPath}", currentUser, reportPath);
+                return StatusCode(500, new { message = "An unexpected error occurred while retrieving report parameters", error = ex.Message, user = currentUser });
             }
         }
 
         /// <summary>
-        /// Render a report to PDF
+        /// Render a report to PDF (default format)
         /// </summary>
         /// <param name="request">Report path and parameters</param>
         /// <returns>PDF file</returns>
@@ -105,6 +130,8 @@ namespace SSRSProxyApi.Controllers
         {
             try
             {
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                
                 if (string.IsNullOrEmpty(request.ReportPath))
                 {
                     return BadRequest(new { message = "Report path is required" });
@@ -116,23 +143,104 @@ namespace SSRSProxyApi.Controllers
                     request.ReportPath = "/" + request.ReportPath;
                 }
 
-                _logger.LogInformation("Rendering report: {ReportPath} with {ParameterCount} parameters", 
-                    request.ReportPath, request.Parameters.Count);
+                _logger.LogInformation("User '{User}' rendering report: {ReportPath} with {ParameterCount} parameters", 
+                    currentUser, request.ReportPath, request.Parameters.Count);
 
                 var pdfBytes = await _ssrsService.RenderReportAsync(request.ReportPath, request.Parameters);
                 
                 var fileName = $"Report_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
                 return File(pdfBytes, "application/pdf", fileName);
             }
+            catch (SSRSException ssrsEx)
+            {
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogWarning("SSRS error for user '{User}' rendering report '{ReportPath}': {ErrorCode} - {Message}", 
+                    currentUser, request.ReportPath, ssrsEx.ErrorCode, ssrsEx.Message);
+                
+                return StatusCode(ssrsEx.HttpStatusCode, new 
+                { 
+                    message = ssrsEx.Message, 
+                    errorCode = ssrsEx.ErrorCode,
+                    user = currentUser,
+                    reportPath = request.ReportPath
+                });
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error rendering report: {ReportPath}", request.ReportPath);
-                return StatusCode(500, new { message = "Error rendering report", error = ex.Message });
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogError(ex, "Unexpected error rendering report for user '{User}': {ReportPath}", currentUser, request.ReportPath);
+                return StatusCode(500, new { message = "An unexpected error occurred while rendering the report", error = ex.Message, user = currentUser });
             }
         }
 
         /// <summary>
-        /// Get current user information for debugging authentication
+        /// Render report in specific format (PDF, Excel, Word, CSV, XML)
+        /// </summary>
+        /// <param name="format">Output format (PDF, EXCEL, WORD, CSV, XML)</param>
+        /// <param name="request">Report path and parameters</param>
+        /// <returns>Report in specified format</returns>
+        [Authorize]
+        [HttpPost("render/{format}")]
+        public async Task<ActionResult> RenderReportInFormat(string format, [FromBody] RenderRequest request)
+        {
+            try
+            {
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                
+                if (string.IsNullOrEmpty(request.ReportPath))
+                {
+                    return BadRequest(new { message = "Report path is required" });
+                }
+
+                // Validate format
+                var supportedFormats = new[] { "PDF", "EXCEL", "WORD", "CSV", "XML", "IMAGE" };
+                var upperFormat = format.ToUpper();
+                if (!supportedFormats.Contains(upperFormat))
+                {
+                    return BadRequest(new { message = $"Unsupported format. Supported formats: {string.Join(", ", supportedFormats)}" });
+                }
+
+                // Ensure path starts with /
+                if (!request.ReportPath.StartsWith("/"))
+                {
+                    request.ReportPath = "/" + request.ReportPath;
+                }
+
+                _logger.LogInformation("User '{User}' rendering report: {ReportPath} in format: {Format} with {ParameterCount} parameters", 
+                    currentUser, request.ReportPath, upperFormat, request.Parameters.Count);
+
+                var reportBytes = await _ssrsService.RenderReportAsync(request.ReportPath, request.Parameters, upperFormat);
+                
+                var (mimeType, fileExtension) = GetMimeTypeAndExtension(upperFormat);
+                var fileName = $"Report_{DateTime.Now:yyyyMMdd_HHmmss}.{fileExtension}";
+                
+                return File(reportBytes, mimeType, fileName);
+            }
+            catch (SSRSException ssrsEx)
+            {
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogWarning("SSRS error for user '{User}' rendering report '{ReportPath}' in format '{Format}': {ErrorCode} - {Message}", 
+                    currentUser, request.ReportPath, format, ssrsEx.ErrorCode, ssrsEx.Message);
+                
+                return StatusCode(ssrsEx.HttpStatusCode, new 
+                { 
+                    message = ssrsEx.Message, 
+                    errorCode = ssrsEx.ErrorCode,
+                    user = currentUser,
+                    reportPath = request.ReportPath,
+                    format = format
+                });
+            }
+            catch (Exception ex)
+            {
+                var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+                _logger.LogError(ex, "Unexpected error rendering report for user '{User}': {ReportPath} in format: {Format}", currentUser, request.ReportPath, format);
+                return StatusCode(500, new { message = "An unexpected error occurred while rendering the report", error = ex.Message, user = currentUser, format });
+            }
+        }
+
+        /// <summary>
+        /// Get current user information
         /// </summary>
         /// <returns>Current user details</returns>
         [Authorize]
@@ -147,12 +255,25 @@ namespace SSRSProxyApi.Controllers
                 IsAuthenticated = identity?.IsAuthenticated ?? false,
                 Name = identity?.Name ?? "Unknown",
                 AuthenticationType = identity?.AuthenticationType ?? "None",
-                IsWindowsIdentity = OperatingSystem.IsWindows() && identity is WindowsIdentity,
-                Claims = user?.Claims.Select(c => new { c.Type, c.Value }).ToList()
+                IsWindowsIdentity = OperatingSystem.IsWindows() && identity is WindowsIdentity
             };
 
-            _logger.LogInformation("Current user info: {@UserInfo}", userInfo);
+            _logger.LogInformation("Current user info requested: {UserName}", userInfo.Name);
             return Ok(userInfo);
+        }
+
+        private static (string mimeType, string extension) GetMimeTypeAndExtension(string format)
+        {
+            return format.ToUpper() switch
+            {
+                "PDF" => ("application/pdf", "pdf"),
+                "EXCEL" => ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+                "WORD" => ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
+                "CSV" => ("text/csv", "csv"),
+                "XML" => ("application/xml", "xml"),
+                "IMAGE" => ("image/png", "png"),
+                _ => ("application/octet-stream", "bin")
+            };
         }
     }
 }
