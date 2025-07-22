@@ -10,6 +10,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Add HttpContextAccessor for pass-through authentication
+builder.Services.AddHttpContextAccessor();
+
 // Configure SSRS settings
 builder.Services.Configure<SSRSConfig>(
     builder.Configuration.GetSection("SSRS"));

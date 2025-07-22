@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SSRSProxyApi.Models;
 using SSRSProxyApi.Services;
+using System.Security.Principal;
 
 namespace SSRSProxyApi.Controllers
 {
@@ -128,6 +129,30 @@ namespace SSRSProxyApi.Controllers
                 _logger.LogError(ex, "Error rendering report: {ReportPath}", request.ReportPath);
                 return StatusCode(500, new { message = "Error rendering report", error = ex.Message });
             }
+        }
+
+        /// <summary>
+        /// Get current user information for debugging authentication
+        /// </summary>
+        /// <returns>Current user details</returns>
+        [Authorize]
+        [HttpGet("user")]
+        public ActionResult GetCurrentUser()
+        {
+            var user = HttpContext.User;
+            var identity = user?.Identity;
+            
+            var userInfo = new
+            {
+                IsAuthenticated = identity?.IsAuthenticated ?? false,
+                Name = identity?.Name ?? "Unknown",
+                AuthenticationType = identity?.AuthenticationType ?? "None",
+                IsWindowsIdentity = OperatingSystem.IsWindows() && identity is WindowsIdentity,
+                Claims = user?.Claims.Select(c => new { c.Type, c.Value }).ToList()
+            };
+
+            _logger.LogInformation("Current user info: {@UserInfo}", userInfo);
+            return Ok(userInfo);
         }
     }
 }
