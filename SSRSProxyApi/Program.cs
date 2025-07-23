@@ -20,6 +20,20 @@ builder.Services.Configure<SSRSConfig>(
 // Register SSRS service
 builder.Services.AddScoped<ISSRSService, SSRSService>();
 
+// Add CORS policy for React frontend (adjust origin as needed)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend",
+        policy => policy
+            .WithOrigins(
+                "http://localhost:5173"           // Local development
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()
+    );
+});
+
 builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
    .AddNegotiate();
 
@@ -39,6 +53,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Use CORS before authentication/authorization
+app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
