@@ -155,6 +155,10 @@ https://localhost:7134/api/Reports
 | `POST` | `/render` | Render report as PDF | :white_check_mark: |
 | `POST` | `/render/{format}` | Render report in specific format | :white_check_mark: |
 | `GET` | `/user` | Get current user info | :white_check_mark: |
+| `GET` | `/security/policies` | List item policies | :white_check_mark: |
+| `POST` | `/security/policies` | Set item policies | :white_check_mark: |
+| `GET` | `/security/roles` | List available roles | :white_check_mark: |
+| `GET` | `/security/policies/user` | Get user/group permissions | :white_check_mark: |
 
 ---
 
@@ -334,6 +338,42 @@ GET /api/Reports/user
   "isWindowsIdentity": true
 }
 ```
+
+## Security Management
+
+The API provides endpoints to manage SSRS permissions and roles:
+
+- **List policies for an item:**
+  - `GET /api/Security/policies?itemPath=...`
+- **Set policies for an item:**
+  - `POST /api/Security/policies?itemPath=...` (replaces all policies)
+- **List available SSRS roles:**
+  - `GET /api/Security/roles`
+- **List all items where a user/group has permissions:**
+  - `GET /api/Security/policies/user?userOrGroup=...`
+
+### Example: Get all permissions for a user/group
+
+```http
+GET /api/Security/policies/user?userOrGroup=DOMAIN\\username
+```
+
+**Response:**
+```json
+{
+    "itemPath": "/Sales/Monthly Sales",
+    "itemType": "Report",
+    "roles": ["Browser", "Content Manager"]
+  },
+  {
+    "itemPath": "/Sales",
+    "itemType": "Folder",
+    "roles": ["Browser"]
+  }
+]
+```
+
+See `docs/API_REFERENCE.md` for full details on all endpoints.
 
 ## Authentication
 

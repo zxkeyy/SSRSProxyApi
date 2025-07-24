@@ -1,4 +1,3 @@
-```markdown
 # API Reference
 
 ## Overview
@@ -299,6 +298,124 @@ GET /?folderPath={path}
 ]
 ```
 
+---
+
+### Create Folder
+
+Create a new folder in SSRS.
+
+```http
+POST /api/Management/folder?parentPath={parentPath}&folderName={folderName}&description={description}
+```
+
+#### Parameters
+| Parameter    | Type   | Required | Description                       |
+|--------------|--------|----------|-----------------------------------|
+| parentPath   | string | Yes      | Path of the parent folder         |
+| folderName   | string | Yes      | Name of the new folder            |
+| description  | string | No       | Description of the folder         |
+
+#### Response
+```json
+{ "message": "Folder created successfully" }
+```
+
+---
+
+### Delete Folder
+
+Delete a folder in SSRS.
+
+```http
+DELETE /api/Management/folder?folderPath={folderPath}
+```
+
+#### Parameters
+| Parameter    | Type   | Required | Description                       |
+|--------------|--------|----------|-----------------------------------|
+| folderPath   | string | Yes      | Path of the folder to delete      |
+
+#### Response
+```json
+{ "message": "Folder deleted successfully" }
+```
+
+---
+
+### Create Report
+
+Create a new report in SSRS.
+
+```http
+POST /api/Management/report?parentPath={parentPath}&reportName={reportName}&description={description}
+Content-Type: application/json
+
+[report definition as byte array]
+```
+
+#### Parameters
+| Parameter    | Type   | Required | Description                       |
+|--------------|--------|----------|-----------------------------------|
+| parentPath   | string | Yes      | Path of the parent folder         |
+| reportName   | string | Yes      | Name of the new report            |
+| description  | string | No       | Description of the report         |
+| definition   | byte[] | Yes (body) | Report definition (RDL) as byte array |
+
+#### Response
+```json
+{ "message": "Report created successfully" }
+```
+
+---
+
+### Delete Report
+
+Delete a report in SSRS.
+
+```http
+DELETE /api/Management/report?reportPath={reportPath}
+```
+
+#### Parameters
+| Parameter    | Type   | Required | Description                       |
+|--------------|--------|----------|-----------------------------------|
+| reportPath   | string | Yes      | Path of the report to delete      |
+
+#### Response
+```json
+{ "message": "Report deleted successfully" }
+```
+
+---
+
+### Move Item
+
+Move a report or folder to a new location in SSRS.
+
+```http
+POST /api/Management/move?itemPath={itemPath}&targetPath={targetPath}
+```
+
+#### Parameters
+| Parameter    | Type   | Required | Description                       |
+|--------------|--------|----------|-----------------------------------|
+| itemPath     | string | Yes      | Path of the item to move          |
+| targetPath   | string | Yes      | New path for the item             |
+
+#### Response
+```json
+{ "message": "Item moved successfully" }
+```
+
+---
+
+### Security Management Endpoints
+
+- `GET /api/Security/policies?itemPath=...` — List all policies for an item
+- `POST /api/Security/policies?itemPath=...` — Set all policies for an item
+- `GET /api/Security/roles` — List available SSRS roles
+- `GET /api/Security/policies/user?userOrGroup=...` — List all items where a user/group has permissions
+
 ## Rate Limiting
 
 Currently, there are no built-in rate limits, but consider implementing them based on your infrastructure needs.
@@ -408,5 +525,3 @@ async function renderReportSafely(reportPath, parameters) {
     throw error;
   }
 }
-```
-```
