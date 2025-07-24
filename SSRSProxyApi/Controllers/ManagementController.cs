@@ -51,9 +51,9 @@ namespace SSRSProxyApi.Controllers
 
         [Authorize]
         [HttpPost("move")]
-        public async Task<IActionResult> MoveItem([FromQuery] string itemPath, [FromQuery] string newParentPath, [FromQuery] string newName)
+        public async Task<IActionResult> MoveItem([FromQuery] string itemPath, [FromQuery] string targetPath)
         {
-            await _ssrsService.MoveItemAsync(itemPath, newParentPath, newName);
+            await _ssrsService.MoveItemAsync(itemPath, targetPath);
             return Ok(new { message = "Item moved successfully" });
         }
     }

@@ -15,6 +15,6 @@ namespace SSRSProxyApi.Services
         Task DeleteFolderAsync(string folderPath);
         Task CreateReportAsync(string parentPath, string reportName, byte[] definition, string description = "");
         Task DeleteReportAsync(string reportPath);
-        Task MoveItemAsync(string itemPath, string newParentPath, string newName);
+        Task MoveItemAsync(string itemPath, string targetPath);
     }
 }

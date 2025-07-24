@@ -300,10 +300,10 @@ namespace SSRSProxyApi.Services
             await DeleteFolderAsync(reportPath); // Reports and folders use DeleteItem
         }
 
-        public async Task MoveItemAsync(string itemPath, string newParentPath, string newName)
+        public async Task MoveItemAsync(string itemPath, string targetPath)
         {
             using var httpClient = CreateHttpClientForCurrentUser();
-            var soapEnvelope = CreateMoveItemSoapEnvelope(itemPath, newParentPath, newName);
+            var soapEnvelope = CreateMoveItemSoapEnvelope(itemPath, targetPath);
             var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
             var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService) { Content = content };
             request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/MoveItem");
@@ -749,7 +749,7 @@ namespace SSRSProxyApi.Services
 </soap:Envelope>";
         }
 
-        private string CreateMoveItemSoapEnvelope(string itemPath, string newParentPath, string newName)
+        private string CreateMoveItemSoapEnvelope(string itemPath, string targetPath)
         {
             return $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
@@ -758,8 +758,7 @@ namespace SSRSProxyApi.Services
     <soap:Body>
         <MoveItem xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
             <Item>{itemPath}</Item>
-            <NewParent>{newParentPath}</NewParent>
-            <NewName>{newName}</NewName>
+            <Target>{targetPath}</Target>
         </MoveItem>
     </soap:Body>
 </soap:Envelope>";
