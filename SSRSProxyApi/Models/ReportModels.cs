@@ -65,4 +65,16 @@ namespace SSRSProxyApi.Models
             ErrorCode = errorCode;
         }
     }
+
+    public class PolicyInfo
+    {
+        public string GroupUserName { get; set; } = string.Empty;
+        public List<string> Roles { get; set; } = new();
+    }
+
+    public class RoleInfo
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
 }

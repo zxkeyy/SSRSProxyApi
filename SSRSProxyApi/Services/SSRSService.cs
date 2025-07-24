@@ -188,6 +188,134 @@ namespace SSRSProxyApi.Services
             }
         }
 
+        public async Task<IEnumerable<PolicyInfo>> GetPoliciesAsync(string itemPath)
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateGetPoliciesSoapEnvelope(itemPath);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService)
+            {
+                Content = content
+            };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/GetPolicies");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to get policies for item '{itemPath}': {errorMessage}");
+            }
+            return ParseGetPoliciesResponse(responseContent);
+        }
+
+        public async Task SetPoliciesAsync(string itemPath, IEnumerable<PolicyInfo> policies)
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateSetPoliciesSoapEnvelope(itemPath, policies);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService)
+            {
+                Content = content
+            };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/SetPolicies");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to set policies for item '{itemPath}': {errorMessage}");
+            }
+        }
+
+        public async Task<IEnumerable<RoleInfo>> ListRolesAsync()
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateListRolesSoapEnvelope();
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService)
+            {
+                Content = content
+            };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/ListRoles");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to list roles: {errorMessage}");
+            }
+            return ParseListRolesResponse(responseContent);
+        }
+
+        public async Task CreateFolderAsync(string parentPath, string folderName, string description = "")
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateCreateFolderSoapEnvelope(parentPath, folderName, description);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService) { Content = content };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/CreateFolder");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to create folder: {errorMessage}");
+            }
+        }
+
+        public async Task DeleteFolderAsync(string folderPath)
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateDeleteItemSoapEnvelope(folderPath);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService) { Content = content };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/DeleteItem");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to delete folder: {errorMessage}");
+            }
+        }
+
+        public async Task CreateReportAsync(string parentPath, string reportName, byte[] definition, string description = "")
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateCreateReportSoapEnvelope(parentPath, reportName, definition, description);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService) { Content = content };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/CreateReport");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to create report: {errorMessage}");
+            }
+        }
+
+        public async Task DeleteReportAsync(string reportPath)
+        {
+            await DeleteFolderAsync(reportPath); // Reports and folders use DeleteItem
+        }
+
+        public async Task MoveItemAsync(string itemPath, string newParentPath, string newName)
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateMoveItemSoapEnvelope(itemPath, newParentPath, newName);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService) { Content = content };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/MoveItem");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to move item: {errorMessage}");
+            }
+        }
+
         public void Dispose()
         {
             // No resources to dispose
@@ -530,6 +658,113 @@ namespace SSRSProxyApi.Services
 </soap:Envelope>";
         }
 
+        private string CreateGetPoliciesSoapEnvelope(string itemPath)
+        {
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <GetPolicies xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <Item>{itemPath}</Item>
+        </GetPolicies>
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateSetPoliciesSoapEnvelope(string itemPath, IEnumerable<PolicyInfo> policies)
+        {
+            var policiesXml = string.Join("", policies.Select(p => $"<Policy><GroupUserName>{p.GroupUserName}</GroupUserName><Roles>{string.Join("", p.Roles.Select(r => $"<Role>{r}</Role>"))}</Roles></Policy>"));
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <SetPolicies xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <Item>{itemPath}</Item>
+            <Policies>{policiesXml}</Policies>
+        </SetPolicies>
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateListRolesSoapEnvelope()
+        {
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <ListRoles xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"" />
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateCreateFolderSoapEnvelope(string parentPath, string folderName, string description)
+        {
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <CreateFolder xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <Folder>{folderName}</Folder>
+            <Parent>{parentPath}</Parent>
+            <Description>{description}</Description>
+        </CreateFolder>
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateCreateReportSoapEnvelope(string parentPath, string reportName, byte[] definition, string description)
+        {
+            var definitionBase64 = Convert.ToBase64String(definition);
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <CreateReport xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <Report>{reportName}</Report>
+            <Parent>{parentPath}</Parent>
+            <Definition>{definitionBase64}</Definition>
+            <Description>{description}</Description>
+            <Overwrite>true</Overwrite>
+        </CreateReport>
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateDeleteItemSoapEnvelope(string itemPath)
+        {
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <DeleteItem xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <Item>{itemPath}</Item>
+        </DeleteItem>
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateMoveItemSoapEnvelope(string itemPath, string newParentPath, string newName)
+        {
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <MoveItem xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <Item>{itemPath}</Item>
+            <NewParent>{newParentPath}</NewParent>
+            <NewName>{newName}</NewName>
+        </MoveItem>
+    </soap:Body>
+</soap:Envelope>";
+        }
+
         #endregion
 
         #region Response Parsing
@@ -733,6 +968,32 @@ namespace SSRSProxyApi.Services
                 _logger.LogError(ex, "Failed to extract rendered report from response: {Response}", responseXml);
                 throw new InvalidOperationException("Could not extract rendered report from response", ex);
             }
+        }
+
+        private IEnumerable<PolicyInfo> ParseGetPoliciesResponse(string responseXml)
+        {
+            var doc = XDocument.Parse(responseXml);
+            var ns = XNamespace.Get("http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices");
+            var policies = doc.Descendants(ns + "Policy")
+                .Select(p => new PolicyInfo
+                {
+                    GroupUserName = p.Element(ns + "GroupUserName")?.Value ?? string.Empty,
+                    Roles = p.Element(ns + "Roles")?.Elements(ns + "Role").Select(r => r.Value).ToList() ?? new List<string>()
+                });
+            return policies.ToList();
+        }
+
+        private IEnumerable<RoleInfo> ParseListRolesResponse(string responseXml)
+        {
+            var doc = XDocument.Parse(responseXml);
+            var ns = XNamespace.Get("http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices");
+            var roles = doc.Descendants(ns + "Role")
+                .Select(r => new RoleInfo
+                {
+                    Name = r.Element(ns + "Name")?.Value ?? string.Empty,
+                    Description = r.Element(ns + "Description")?.Value ?? string.Empty
+                });
+            return roles.ToList();
         }
 
         #endregion
