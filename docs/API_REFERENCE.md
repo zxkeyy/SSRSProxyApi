@@ -546,12 +546,37 @@ Array of PolicyInfo objects with groupUserName and roles.
 
 ---
 
-### List Roles
+### List System Roles
 
-List available SSRS roles.
+List available SSRS system-level roles (e.g., System Administrator, System User).
 
 ```http
-GET /api/Security/roles
+GET /api/Security/roles/system
+```
+
+#### Response
+
+```json
+[
+  {
+    "name": "System Administrator",
+    "description": "May manage site-wide settings and security."
+  },
+  {
+    "name": "System User",
+    "description": "May view site-wide settings."
+  }
+]
+```
+
+---
+
+### List Catalog Roles
+
+List available SSRS catalog (item-level) roles (e.g., Browser, Publisher, My Reports, Content Manager).
+
+```http
+GET /api/Security/roles/catalog
 ```
 
 #### Response
@@ -595,6 +620,49 @@ GET /api/Security/policies/user?userOrGroup={userOrGroup}
     "roles": ["Browser", "Content Manager"]
   }
 ]
+```
+
+---
+
+### Get System Policies
+
+Retrieve global (system-level) security policies.
+
+```http
+GET /api/Security/system-policies
+```
+
+#### Response
+
+```json
+{
+  "groupUserName": "DOMAIN\\Admins",
+  "roles": ["System Administrator"]
+}
+```
+
+---
+
+### Set System Policies
+
+Set global (system-level) security policies. This will overwrite all existing system policies.
+
+```http
+POST /api/Security/system-policies
+Content-Type: application/json
+
+{
+  "groupUserName": "DOMAIN\\Admins",
+  "roles": ["System Administrator"]
+}
+```
+
+#### Response
+
+```json
+{
+  "message": "System policies updated successfully"
+}
 ```
 
 ---

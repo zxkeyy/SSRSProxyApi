@@ -51,17 +51,33 @@ namespace SSRSProxyApi.Controllers
         }
 
         [Authorize]
-        [HttpGet("roles")]
-        public async Task<ActionResult<IEnumerable<RoleInfo>>> ListRoles()
+        [HttpGet("roles/system")]
+        public async Task<ActionResult<IEnumerable<RoleInfo>>> ListSystemRoles()
         {
             try
             {
-                var roles = await _ssrsService.ListRolesAsync();
+                var roles = await _ssrsService.ListSystemRolesAsync();
                 return Ok(roles);
             }
             catch (SSRSException ex)
             {
-                _logger.LogError(ex, "Error listing roles");
+                _logger.LogError(ex, "Error listing system roles");
+                return StatusCode(ex.HttpStatusCode, new { message = ex.Message, errorCode = ex.ErrorCode });
+            }
+        }
+
+        [Authorize]
+        [HttpGet("roles/catalog")]
+        public async Task<ActionResult<IEnumerable<RoleInfo>>> ListCatalogRoles()
+        {
+            try
+            {
+                var roles = await _ssrsService.ListCatalogRolesAsync();
+                return Ok(roles);
+            }
+            catch (SSRSException ex)
+            {
+                _logger.LogError(ex, "Error listing catalog roles");
                 return StatusCode(ex.HttpStatusCode, new { message = ex.Message, errorCode = ex.ErrorCode });
             }
         }
@@ -116,6 +132,38 @@ namespace SSRSProxyApi.Controllers
             {
                 _logger.LogError(ex, "Error getting policies for user/group: {UserOrGroup}", userOrGroup);
                 return StatusCode(500, new { message = "Error getting policies for user/group", error = ex.Message });
+            }
+        }
+
+        [Authorize]
+        [HttpGet("system-policies")]
+        public async Task<ActionResult<IEnumerable<PolicyInfo>>> GetSystemPolicies()
+        {
+            try
+            {
+                var policies = await _ssrsService.GetSystemPoliciesAsync();
+                return Ok(policies);
+            }
+            catch (SSRSException ex)
+            {
+                _logger.LogError(ex, "Error getting system policies");
+                return StatusCode(ex.HttpStatusCode, new { message = ex.Message, errorCode = ex.ErrorCode });
+            }
+        }
+
+        [Authorize]
+        [HttpPost("system-policies")]
+        public async Task<ActionResult> SetSystemPolicies([FromBody] IEnumerable<PolicyInfo> policies)
+        {
+            try
+            {
+                await _ssrsService.SetSystemPoliciesAsync(policies);
+                return Ok(new { message = "System policies updated successfully" });
+            }
+            catch (SSRSException ex)
+            {
+                _logger.LogError(ex, "Error setting system policies");
+                return StatusCode(ex.HttpStatusCode, new { message = ex.Message, errorCode = ex.ErrorCode });
             }
         }
     }

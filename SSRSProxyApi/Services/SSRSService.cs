@@ -218,6 +218,7 @@ namespace SSRSProxyApi.Services
                 Content = content
             };
             request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/SetPolicies");
+            Console.WriteLine($"envelope : {soapEnvelope}");
             var response = await httpClient.SendAsync(request);
             var responseContent = await response.Content.ReadAsStringAsync();
             if (!response.IsSuccessStatusCode)
@@ -314,6 +315,16 @@ namespace SSRSProxyApi.Services
                 var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
                 throw new SSRSException(statusCode, errorCode, $"Failed to move item: {errorMessage}");
             }
+        }
+
+        public async Task<IEnumerable<RoleInfo>> ListSystemRolesAsync()
+        {
+            return await ListRolesByScopeAsync("System");
+        }
+
+        public async Task<IEnumerable<RoleInfo>> ListCatalogRolesAsync()
+        {
+            return await ListRolesByScopeAsync("Catalog");
         }
 
         public void Dispose()
@@ -674,7 +685,7 @@ namespace SSRSProxyApi.Services
 
         private string CreateSetPoliciesSoapEnvelope(string itemPath, IEnumerable<PolicyInfo> policies)
         {
-            var policiesXml = string.Join("", policies.Select(p => $"<Policy><GroupUserName>{p.GroupUserName}</GroupUserName><Roles>{string.Join("", p.Roles.Select(r => $"<Role>{r}</Role>"))}</Roles></Policy>"));
+            var policiesXml = string.Join("", policies.Select(p => $"<Policy><GroupUserName>{p.GroupUserName}</GroupUserName><Roles>{string.Join("", p.Roles.Select(r => $"<Role><Name>{r}</Name></Role>"))}</Roles></Policy>"));
             return $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
                xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
@@ -688,9 +699,24 @@ namespace SSRSProxyApi.Services
 </soap:Envelope>";
         }
 
-        private string CreateListRolesSoapEnvelope()
+        private string CreateListRolesSoapEnvelope(string? scope = null)
         {
-            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+            if (!string.IsNullOrEmpty(scope))
+            {
+                return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <ListRoles xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <SecurityScope>{scope}</SecurityScope>
+        </ListRoles>
+    </soap:Body>
+</soap:Envelope>";
+            }
+            else
+            {
+                return $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
                xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
                xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
@@ -698,6 +724,7 @@ namespace SSRSProxyApi.Services
         <ListRoles xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"" />
     </soap:Body>
 </soap:Envelope>";
+            }
         }
 
         private string CreateCreateFolderSoapEnvelope(string parentPath, string folderName, string description)
@@ -760,6 +787,33 @@ namespace SSRSProxyApi.Services
             <Item>{itemPath}</Item>
             <Target>{targetPath}</Target>
         </MoveItem>
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateGetSystemPoliciesSoapEnvelope()
+        {
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <GetSystemPolicies xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"" />
+    </soap:Body>
+</soap:Envelope>";
+        }
+
+        private string CreateSetSystemPoliciesSoapEnvelope(IEnumerable<PolicyInfo> policies)
+        {
+            var policiesXml = string.Join("", policies.Select(p => $"<Policy><GroupUserName>{p.GroupUserName}</GroupUserName><Roles>{string.Join("", p.Roles.Select(r => $"<Role><Name>{r}</Name></Role>"))}</Roles></Policy>"));
+            return $@"<?xml version=""1.0"" encoding=""utf-8""?>
+<soap:Envelope xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" 
+               xmlns:xsd=""http://www.w3.org/2001/XMLSchema"" 
+               xmlns:soap=""http://schemas.xmlsoap.org/soap/envelope/"">
+    <soap:Body>
+        <SetSystemPolicies xmlns=""http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices"">
+            <Policies>{policiesXml}</Policies>
+        </SetSystemPolicies>
     </soap:Body>
 </soap:Envelope>";
         }
@@ -996,5 +1050,64 @@ namespace SSRSProxyApi.Services
         }
 
         #endregion
+
+        private async Task<IEnumerable<RoleInfo>> ListRolesByScopeAsync(string scope)
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateListRolesSoapEnvelope(scope);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService)
+            {
+                Content = content
+            };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/ListRoles");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to list roles: {errorMessage}");
+            }
+            return ParseListRolesResponse(responseContent);
+        }
+
+        public async Task<IEnumerable<PolicyInfo>> GetSystemPoliciesAsync()
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateGetSystemPoliciesSoapEnvelope();
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService)
+            {
+                Content = content
+            };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/GetSystemPolicies");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to get system policies: {errorMessage}");
+            }
+            return ParseGetPoliciesResponse(responseContent);
+        }
+
+        public async Task SetSystemPoliciesAsync(IEnumerable<PolicyInfo> policies)
+        {
+            using var httpClient = CreateHttpClientForCurrentUser();
+            var soapEnvelope = CreateSetSystemPoliciesSoapEnvelope(policies);
+            var content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml");
+            var request = new HttpRequestMessage(HttpMethod.Post, _config.SoapEndpoints.ReportService)
+            {
+                Content = content
+            };
+            request.Headers.Add("SOAPAction", "http://schemas.microsoft.com/sqlserver/2005/06/30/reporting/reportingservices/SetSystemPolicies");
+            var response = await httpClient.SendAsync(request);
+            var responseContent = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                var (statusCode, errorCode, errorMessage) = ParseSSRSError(responseContent);
+                throw new SSRSException(statusCode, errorCode, $"Failed to set system policies: {errorMessage}");
+            }
+        }
     }
 }
