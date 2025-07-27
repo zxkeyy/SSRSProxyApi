@@ -288,6 +288,68 @@ namespace SSRSProxyApi.Controllers
             return Ok(userInfo);
         }
 
+        /// <summary>
+        /// Search for reports and folders by name or description (recursive)
+        /// </summary>
+        /// <param name="query">Search term (case-insensitive, matches name or description)</param>
+        /// <returns>List of matching reports and folders</returns>
+        [Authorize]
+        [HttpGet("search")]
+        public async Task<ActionResult<IEnumerable<object>>> Search([FromQuery] string query)
+        {
+            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            if (string.IsNullOrWhiteSpace(query))
+                return BadRequest(new { message = "Query parameter is required" });
+
+            try
+            {
+                _logger.LogInformation("User '{User}' searching for items with query: {Query}", currentUser, query);
+                var results = new List<object>();
+                async Task BrowseRecursive(string path)
+                {
+                    var content = await _ssrsService.BrowseFolderAsync(path);
+                    foreach (var folder in content.Folders)
+                    {
+                        if (folder.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                            (!string.IsNullOrEmpty(folder.Description) && folder.Description.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            results.Add(new {
+                                Type = "Folder",
+                                folder.Name,
+                                folder.Path,
+                                folder.Description,
+                                folder.CreatedDate,
+                                folder.ModifiedDate
+                            });
+                        }
+                        await BrowseRecursive(folder.Path);
+                    }
+                    foreach (var report in content.Reports)
+                    {
+                        if (report.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                            (!string.IsNullOrEmpty(report.Description) && report.Description.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            results.Add(new {
+                                Type = "Report",
+                                report.Name,
+                                report.Path,
+                                report.Description,
+                                report.CreatedDate,
+                                report.ModifiedDate
+                            });
+                        }
+                    }
+                }
+                await BrowseRecursive("/");
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching for items with query: {Query}", query);
+                return StatusCode(500, new { message = "Error searching for items", error = ex.Message });
+            }
+        }
+
         private static (string mimeType, string extension) GetMimeTypeAndExtension(string format)
         {
             return format.ToUpper() switch

@@ -1,4 +1,4 @@
-# API Reference
+# SSRS Proxy API Reference
 
 ## Overview
 
@@ -7,7 +7,7 @@ The SSRS Proxy API provides RESTful endpoints to interact with SQL Server Report
 ## Base URL
 
 ```
-https://your-server/api/Reports
+https://your-server/api
 ```
 
 ## Authentication
@@ -44,14 +44,18 @@ Content-Type: application/json
 }
 ```
 
-## Endpoints
+---
+
+## Reports Controller Endpoints
+
+Base path: `/api/Reports`
 
 ### Test Connection
 
 Test SSRS connectivity and get basic server information.
 
 ```http
-GET /test-connection
+GET /api/Reports/test-connection
 ```
 
 #### Response
@@ -76,10 +80,10 @@ GET /test-connection
 
 ### Browse Folders
 
-Navigate the SSRS folder structure.
+Navigate the SSRS folder structure with both folders and reports.
 
 ```http
-GET /browse?folderPath={path}
+GET /api/Reports/browse?folderPath={path}
 ```
 
 #### Parameters
@@ -117,12 +121,43 @@ GET /browse?folderPath={path}
 
 ---
 
+### Get Reports (Legacy)
+
+Legacy endpoint to get reports from a specific folder.
+
+```http
+GET /api/Reports?folderPath={path}
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| folderPath | string | No | Folder path. Default: "/" |
+
+#### Response
+
+```json
+[
+  {
+    "name": "Sales Report",
+    "path": "/Sales Report",
+    "type": "Report",
+    "createdDate": "2024-01-01T00:00:00Z",
+    "modifiedDate": "2024-01-10T15:30:00Z",
+    "description": "Monthly sales analysis"
+  }
+]
+```
+
+---
+
 ### Get Report Parameters
 
 Retrieve parameter definitions for a specific report.
 
 ```http
-GET /parameters?reportPath={path}
+GET /api/Reports/parameters?reportPath={path}
 ```
 
 #### Parameters
@@ -175,7 +210,7 @@ GET /parameters?reportPath={path}
 Render a report as PDF with specified parameters.
 
 ```http
-POST /render
+POST /api/Reports/render
 Content-Type: application/json
 
 {
@@ -213,7 +248,7 @@ Content-Disposition: attachment; filename="Report_20240115_103000.pdf"
 Render a report in a specific format.
 
 ```http
-POST /render/{format}
+POST /api/Reports/render/{format}
 Content-Type: application/json
 
 {
@@ -253,7 +288,7 @@ Binary content in the requested format with appropriate headers.
 Retrieve information about the authenticated user.
 
 ```http
-GET /user
+GET /api/Reports/user
 ```
 
 #### Response
@@ -269,36 +304,48 @@ GET /user
 
 ---
 
-### Get Reports (Legacy)
+### Search Reports and Folders
 
-Legacy endpoint to get reports from a specific folder.
+Recursively search for reports and folders by name or description.
 
 ```http
-GET /?folderPath={path}
+GET /api/Reports/search?query={searchTerm}
 ```
 
 #### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| folderPath | string | No | Folder path. Default: "/" |
+| query | string | Yes | Search term (case-insensitive, matches name or description) |
 
 #### Response
 
 ```json
 [
   {
-    "name": "Sales Report",
-    "path": "/Sales Report",
     "type": "Report",
+    "name": "Monthly Sales",
+    "path": "/Sales/Monthly Sales",
+    "description": "Monthly sales report",
     "createdDate": "2024-01-01T00:00:00Z",
-    "modifiedDate": "2024-01-10T15:30:00Z",
-    "description": "Monthly sales analysis"
+    "modifiedDate": "2024-01-10T15:30:00Z"
+  },
+  {
+    "type": "Folder",
+    "name": "Regional",
+    "path": "/Sales/Regional",
+    "description": "Regional reports folder",
+    "createdDate": "2024-01-01T00:00:00Z",
+    "modifiedDate": "2024-01-10T15:30:00Z"
   }
 ]
 ```
 
 ---
+
+## Management Controller Endpoints
+
+Base path: `/api/Management`
 
 ### Create Folder
 
@@ -309,15 +356,19 @@ POST /api/Management/folder?parentPath={parentPath}&folderName={folderName}&desc
 ```
 
 #### Parameters
-| Parameter    | Type   | Required | Description                       |
-|--------------|--------|----------|-----------------------------------|
-| parentPath   | string | Yes      | Path of the parent folder         |
-| folderName   | string | Yes      | Name of the new folder            |
-| description  | string | No       | Description of the folder         |
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| parentPath | string | Yes | Path of the parent folder |
+| folderName | string | Yes | Name of the new folder |
+| description | string | No | Description of the folder |
 
 #### Response
+
 ```json
-{ "message": "Folder created successfully" }
+{
+  "message": "Folder created successfully"
+}
 ```
 
 ---
@@ -331,13 +382,17 @@ DELETE /api/Management/folder?folderPath={folderPath}
 ```
 
 #### Parameters
-| Parameter    | Type   | Required | Description                       |
-|--------------|--------|----------|-----------------------------------|
-| folderPath   | string | Yes      | Path of the folder to delete      |
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| folderPath | string | Yes | Path of the folder to delete |
 
 #### Response
+
 ```json
-{ "message": "Folder deleted successfully" }
+{
+  "message": "Folder deleted successfully"
+}
 ```
 
 ---
@@ -354,16 +409,23 @@ Content-Type: application/json
 ```
 
 #### Parameters
-| Parameter    | Type   | Required | Description                       |
-|--------------|--------|----------|-----------------------------------|
-| parentPath   | string | Yes      | Path of the parent folder         |
-| reportName   | string | Yes      | Name of the new report            |
-| description  | string | No       | Description of the report         |
-| definition   | byte[] | Yes (body) | Report definition (RDL) as byte array |
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| parentPath | string | Yes | Path of the parent folder |
+| reportName | string | Yes | Name of the new report |
+| description | string | No | Description of the report |
+
+#### Request Body
+
+Report definition (RDL) as byte array in JSON body.
 
 #### Response
+
 ```json
-{ "message": "Report created successfully" }
+{
+  "message": "Report created successfully"
+}
 ```
 
 ---
@@ -377,13 +439,17 @@ DELETE /api/Management/report?reportPath={reportPath}
 ```
 
 #### Parameters
-| Parameter    | Type   | Required | Description                       |
-|--------------|--------|----------|-----------------------------------|
-| reportPath   | string | Yes      | Path of the report to delete      |
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| reportPath | string | Yes | Path of the report to delete |
 
 #### Response
+
 ```json
-{ "message": "Report deleted successfully" }
+{
+  "message": "Report deleted successfully"
+}
 ```
 
 ---
@@ -397,36 +463,250 @@ POST /api/Management/move?itemPath={itemPath}&targetPath={targetPath}
 ```
 
 #### Parameters
-| Parameter    | Type   | Required | Description                       |
-|--------------|--------|----------|-----------------------------------|
-| itemPath     | string | Yes      | Path of the item to move          |
-| targetPath   | string | Yes      | New path for the item             |
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| itemPath | string | Yes | Path of the item to move |
+| targetPath | string | Yes | New path for the item |
 
 #### Response
+
 ```json
-{ "message": "Item moved successfully" }
+{
+  "message": "Item moved successfully"
+}
 ```
 
 ---
 
-### Security Management Endpoints
+## Security Controller Endpoints
 
-- `GET /api/Security/policies?itemPath=...` — List all policies for an item
-- `POST /api/Security/policies?itemPath=...` — Set all policies for an item
-- `GET /api/Security/roles` — List available SSRS roles
-- `GET /api/Security/policies/user?userOrGroup=...` — List all items where a user/group has permissions
+Base path: `/api/Security`
 
-## Rate Limiting
+### Get Policies
 
-Currently, there are no built-in rate limits, but consider implementing them based on your infrastructure needs.
+List all policies for an item.
 
-## Security Considerations
+```http
+GET /api/Security/policies?itemPath={itemPath}
+```
 
-1. **Authentication**: Always use Windows Authentication in production
-2. **Authorization**: SSRS permissions are enforced at the server level
-3. **HTTPS**: Use HTTPS in production environments
-4. **Input Validation**: All parameters are validated before sending to SSRS
-5. **Error Handling**: Sensitive information is not exposed in error messages
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| itemPath | string | Yes | Path of the item to get policies for |
+
+#### Response
+
+```json
+[
+  {
+    "groupUserName": "DOMAIN\\Users",
+    "roles": ["Browser", "Content Manager"]
+  }
+]
+```
+
+---
+
+### Set Policies
+
+Set all policies for an item.
+
+```http
+POST /api/Security/policies?itemPath={itemPath}
+Content-Type: application/json
+
+[
+  {
+    "groupUserName": "DOMAIN\\Users",
+    "roles": ["Browser"]
+  }
+]
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| itemPath | string | Yes | Path of the item to set policies for |
+
+#### Request Body
+
+Array of PolicyInfo objects with groupUserName and roles.
+
+#### Response
+
+```json
+{
+  "message": "Policies updated successfully"
+}
+```
+
+---
+
+### List Roles
+
+List available SSRS roles.
+
+```http
+GET /api/Security/roles
+```
+
+#### Response
+
+```json
+[
+  {
+    "name": "Browser",
+    "description": "May view folders, reports and subscribe to reports."
+  },
+  {
+    "name": "Content Manager",
+    "description": "May manage content in the Report Server."
+  }
+]
+```
+
+---
+
+### Get User/Group Policies
+
+List all items where a user/group has permissions.
+
+```http
+GET /api/Security/policies/user?userOrGroup={userOrGroup}
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| userOrGroup | string | Yes | User or group name to search for |
+
+#### Response
+
+```json
+[
+  {
+    "itemPath": "/Sales/Monthly Report",
+    "itemType": "Report",
+    "roles": ["Browser", "Content Manager"]
+  }
+]
+```
+
+---
+
+## Data Models
+
+### RenderRequest
+
+```json
+{
+  "reportPath": "string",
+  "parameters": {
+    "key": "value"
+  }
+}
+```
+
+### ReportInfo
+
+```json
+{
+  "name": "string",
+  "path": "string",
+  "type": "string",
+  "createdDate": "datetime",
+  "modifiedDate": "datetime",
+  "description": "string"
+}
+```
+
+### ReportParameter
+
+```json
+{
+  "name": "string",
+  "type": "string",
+  "nullable": "boolean",
+  "allowBlank": "boolean",
+  "multiValue": "boolean",
+  "validValues": ["string"],
+  "defaultValue": "string",
+  "prompt": "string"
+}
+```
+
+### FolderInfo
+
+```json
+{
+  "name": "string",
+  "path": "string",
+  "createdDate": "datetime",
+  "modifiedDate": "datetime",
+  "description": "string"
+}
+```
+
+### FolderContent
+
+```json
+{
+  "currentPath": "string",
+  "folders": [FolderInfo],
+  "reports": [ReportInfo]
+}
+```
+
+### PolicyInfo
+
+```json
+{
+  "groupUserName": "string",
+  "roles": ["string"]
+}
+```
+
+### RoleInfo
+
+```json
+{
+  "name": "string",
+  "description": "string"
+}
+```
+
+---
+
+## Error Handling
+
+The API uses custom SSRSException handling with the following error codes:
+
+| Error Code | HTTP Status | Description |
+|------------|-------------|-------------|
+| ItemNotFound | 404 | Report or folder not found |
+| AccessDenied | 403 | Access denied to resource |
+| InvalidParameter | 400 | Invalid parameter provided |
+| ParameterTypeMismatch | 400 | Parameter type mismatch |
+| AuthenticationFailed | 401 | Authentication failed |
+| UnexpectedError | 500 | Unexpected server error |
+
+---
+
+## CORS Configuration
+
+The API is configured with CORS support for frontend applications:
+
+- Allowed Origins: `http://localhost:5173` (development)
+- Credentials: Allowed
+- Headers: All allowed
+- Methods: All allowed
+
+---
 
 ## Best Practices
 
@@ -445,7 +725,10 @@ try {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reportPath: '/MyReport' })
+    body: JSON.stringify({ 
+      reportPath: '/MyReport',
+      parameters: { StartDate: '2024-01-01' }
+    })
   });
 
   if (!response.ok) {
@@ -459,10 +742,7 @@ try {
 }
 ```
 
-
-## Examples
-
-### Complete Workflow
+### Complete Workflow Example
 
 ```javascript
 // 1. Test connection
@@ -490,38 +770,20 @@ const pdf = await fetch('/api/Reports/render', {
     parameters: { StartDate: '2024-01-01' }
   })
 }).then(r => r.blob());
+
+// 5. Search for reports
+const searchResults = await fetch('/api/Reports/search?query=sales', {
+  credentials: 'include'
+}).then(r => r.json());
 ```
 
-### Error Handling
+---
 
-```javascript
-async function renderReportSafely(reportPath, parameters) {
-  try {
-    const response = await fetch('/api/Reports/render', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reportPath, parameters })
-    });
+## Security Considerations
 
-    if (!response.ok) {
-      const error = await response.json();
-      
-      switch (error.errorCode) {
-        case 'ItemNotFound':
-          throw new Error(`Report not found: ${reportPath}`);
-        case 'AccessDenied':
-          throw new Error(`Access denied to report: ${reportPath}`);
-        case 'InvalidParameter':
-          throw new Error(`Invalid parameters: ${error.message}`);
-        default:
-          throw new Error(`Rendering failed: ${error.message}`);
-      }
-    }
-
-    return await response.blob();
-  } catch (error) {
-    console.error('Report rendering error:', error);
-    throw error;
-  }
-}
+1. **Authentication**: Windows Authentication is required for all endpoints
+2. **Authorization**: SSRS permissions are enforced at the server level
+3. **HTTPS**: Use HTTPS in production environments
+4. **Input Validation**: All parameters are validated before sending to SSRS
+5. **Error Handling**: Sensitive information is not exposed in error messages
+6. **Pass-through Authentication**: User credentials are passed through to SSRS maintaining security context
