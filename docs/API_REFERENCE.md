@@ -2,22 +2,32 @@
 
 ## Overview
 
-The SSRS Proxy API provides RESTful endpoints to interact with SQL Server Reporting Services. All endpoints require Windows Authentication and return JSON responses (except for report rendering which returns binary content).
+The SSRS Proxy API provides RESTful endpoints to interact with SQL Server Reporting Services. The API supports flexible authentication modes including Windows Authentication and Demo Mode for development/testing.
 
-## Base URL
+## Base URLs
 
 ```
-https://your-server/api
+Reports:     https://localhost:7134/api/Reports
+Security:    https://localhost:7134/api/Security  
+Management:  https://localhost:7134/api/Management
 ```
 
-## Authentication
+## Authentication Modes
 
+### Production Mode (`IsDemo: false`)
 All endpoints require Windows Authentication using the Negotiate scheme (NTLM/Kerberos).
 
-### Request Headers
-
+**Request Headers:**
 ```http
 Authorization: Negotiate <token>
+Content-Type: application/json
+```
+
+### Demo Mode (`IsDemo: true`)
+All endpoints are accessible without authentication. Perfect for development and testing.
+
+**Request Headers:**
+```http
 Content-Type: application/json
 ```
 
@@ -27,7 +37,7 @@ Content-Type: application/json
 |------|-------------|
 | 200 | Success |
 | 400 | Bad Request - Invalid parameters |
-| 401 | Unauthorized - Authentication required |
+| 401 | Unauthorized - Authentication required (production mode only) |
 | 403 | Forbidden - Access denied to resource |
 | 404 | Not Found - Report/folder not found |
 | 500 | Internal Server Error |
@@ -64,6 +74,7 @@ GET /api/Reports/test-connection
 {
   "message": "SSRS connection successful",
   "user": "DOMAIN\\username",
+  "isDemo": false,
   "reportCount": 15,
   "folderCount": 3,
   "reports": [
@@ -72,6 +83,19 @@ GET /api/Reports/test-connection
       "path": "/Sample Report"
     }
   ],
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Demo Mode Response:**
+```json
+{
+  "message": "SSRS connection successful",
+  "user": "MYDOMAIN\\ServiceAccount",
+  "isDemo": true,
+  "reportCount": 15,
+  "folderCount": 3,
+  "reports": [...],
   "timestamp": "2024-01-15T10:30:00Z"
 }
 ```
@@ -285,20 +309,71 @@ Binary content in the requested format with appropriate headers.
 
 ### Get Current User
 
-Retrieve information about the authenticated user.
+Retrieve information about the authenticated user or demo mode status.
 
 ```http
 GET /api/Reports/user
 ```
 
-#### Response
+#### Production Mode Response
 
 ```json
 {
   "isAuthenticated": true,
   "name": "DOMAIN\\username",
   "authenticationType": "Negotiate",
-  "isWindowsIdentity": true
+  "isWindowsIdentity": true,
+  "impersonationLevel": "Delegation",
+  "tokenType": "TokenPresent",
+  "isSystem": false,
+  "isGuest": false,
+  "isAnonymous": false,
+  "groups": ["DOMAIN\\Users", "DOMAIN\\Developers"],
+  "claims": [
+    {
+      "type": "name",
+      "value": "DOMAIN\\username"
+    }
+  ],
+  "canDelegate": true,
+  "isDemo": false,
+  "serverName": "WEB-SERVER-01",
+  "domainName": "DOMAIN",
+  "serverTime": "2024-01-15T10:30:00Z",
+  "serverTimeZone": "Eastern Standard Time"
+}
+```
+
+#### Demo Mode Response
+
+```json
+{
+  "isAuthenticated": true,
+  "name": "MYDOMAIN\\ServiceAccount",
+  "authenticationType": "ServiceAccount (Demo)",
+  "isWindowsIdentity": true,
+  "impersonationLevel": "Delegation",
+  "tokenType": "ServiceAccount",
+  "isSystem": false,
+  "isGuest": false,
+  "isAnonymous": false,
+  "groups": ["BUILTIN\\Users", "NT AUTHORITY\\Authenticated Users"],
+  "claims": [
+    {
+      "type": "name",
+      "value": "MYDOMAIN\\ServiceAccount"
+    },
+    {
+      "type": "authenticationmethod",
+      "value": "ServiceAccount"
+    }
+  ],
+  "canDelegate": true,
+  "isDemo": true,
+  "serverName": "WEB-SERVER-01",
+  "domainName": "MYDOMAIN",
+  "serverTime": "2024-01-15T10:30:00Z",
+  "serverTimeZone": "Eastern Standard Time"
 }
 ```
 
@@ -339,6 +414,260 @@ GET /api/Reports/search?query={searchTerm}
     "modifiedDate": "2024-01-10T15:30:00Z"
   }
 ]
+```
+
+---
+
+## Security Controller Endpoints
+
+Base path: `/api/Security`
+
+### Get Policies
+
+List all policies for an item.
+
+```http
+GET /api/Security/policies?itemPath={itemPath}
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| itemPath | string | Yes | Path of the item to get policies for |
+
+#### Response
+
+```json
+[
+  {
+    "groupUserName": "DOMAIN\\Users",
+    "roles": ["Browser", "Content Manager"]
+  },
+  {
+    "groupUserName": "DOMAIN\\Admins",
+    "roles": ["Content Manager", "Publisher"]
+  }
+]
+```
+
+---
+
+### Set Policies
+
+Set all policies for an item (replaces existing policies).
+
+```http
+POST /api/Security/policies?itemPath={itemPath}
+Content-Type: application/json
+
+[
+  {
+    "groupUserName": "DOMAIN\\Users",
+    "roles": ["Browser"]
+  },
+  {
+    "groupUserName": "DOMAIN\\Admins",
+    "roles": ["Content Manager"]
+  }
+]
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| itemPath | string | Yes | Path of the item to set policies for |
+
+#### Request Body
+
+Array of PolicyInfo objects with groupUserName and roles.
+
+#### Response
+
+```json
+{
+  "message": "Policies updated successfully"
+}
+```
+
+---
+
+### List All Roles
+
+List all available SSRS roles (both system and catalog).
+
+```http
+GET /api/Security/roles
+```
+
+#### Response
+
+```json
+[
+  {
+    "name": "Browser",
+    "description": "May view folders, reports and subscribe to reports."
+  },
+  {
+    "name": "Content Manager",
+    "description": "May manage content in the Report Server."
+  }
+]
+```
+
+---
+
+### List System Roles
+
+List available SSRS system-level roles.
+
+```http
+GET /api/Security/roles/system
+```
+
+#### Response
+
+```json
+[
+  {
+    "name": "System Administrator",
+    "description": "May manage site-wide settings and security."
+  },
+  {
+    "name": "System User",
+    "description": "May view site-wide settings."
+  }
+]
+```
+
+---
+
+### List Catalog Roles
+
+List available SSRS catalog (item-level) roles.
+
+```http
+GET /api/Security/roles/catalog
+```
+
+#### Response
+
+```json
+[
+  {
+    "name": "Browser",
+    "description": "May view folders, reports and subscribe to reports."
+  },
+  {
+    "name": "Content Manager",
+    "description": "May manage content in the Report Server."
+  },
+  {
+    "name": "Publisher",
+    "description": "May publish reports and linked reports to the Report Server."
+  },
+  {
+    "name": "Report Builder",
+    "description": "May view report definitions."
+  },
+  {
+    "name": "My Reports",
+    "description": "May publish reports and linked reports; manage folders, reports and data sources in a users My Reports folder."
+  }
+]
+```
+
+---
+
+### Get User/Group Policies
+
+List all items where a user/group has permissions.
+
+```http
+GET /api/Security/policies/user?userOrGroup={userOrGroup}
+```
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| userOrGroup | string | Yes | User or group name to search for |
+
+#### Response
+
+```json
+[
+  {
+    "itemPath": "/Sales/Monthly Report",
+    "itemType": "Report",
+    "roles": ["Browser", "Content Manager"]
+  },
+  {
+    "itemPath": "/Sales",
+    "itemType": "Folder",
+    "roles": ["Browser"]
+  }
+]
+```
+
+---
+
+### Get System Policies
+
+Retrieve global (system-level) security policies.
+
+```http
+GET /api/Security/policies/system
+```
+
+#### Response
+
+```json
+[
+  {
+    "groupUserName": "DOMAIN\\Admins",
+    "roles": ["System Administrator"]
+  },
+  {
+    "groupUserName": "DOMAIN\\Users",
+    "roles": ["System User"]
+  }
+]
+```
+
+---
+
+### Set System Policies
+
+Set global (system-level) security policies. This will overwrite all existing system policies.
+
+```http
+POST /api/Security/policies/system
+Content-Type: application/json
+
+[
+  {
+    "groupUserName": "DOMAIN\\Admins",
+    "roles": ["System Administrator"]
+  },
+  {
+    "groupUserName": "DOMAIN\\Users",
+    "roles": ["System User"]
+  }
+]
+```
+
+#### Request Body
+
+Array of PolicyInfo objects for system-level policies.
+
+#### Response
+
+```json
+{
+  "message": "System policies updated successfully"
+}
 ```
 
 ---
@@ -479,194 +808,6 @@ POST /api/Management/move?itemPath={itemPath}&targetPath={targetPath}
 
 ---
 
-## Security Controller Endpoints
-
-Base path: `/api/Security`
-
-### Get Policies
-
-List all policies for an item.
-
-```http
-GET /api/Security/policies?itemPath={itemPath}
-```
-
-#### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| itemPath | string | Yes | Path of the item to get policies for |
-
-#### Response
-
-```json
-[
-  {
-    "groupUserName": "DOMAIN\\Users",
-    "roles": ["Browser", "Content Manager"]
-  }
-]
-```
-
----
-
-### Set Policies
-
-Set all policies for an item.
-
-```http
-POST /api/Security/policies?itemPath={itemPath}
-Content-Type: application/json
-
-[
-  {
-    "groupUserName": "DOMAIN\\Users",
-    "roles": ["Browser"]
-  }
-]
-```
-
-#### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| itemPath | string | Yes | Path of the item to set policies for |
-
-#### Request Body
-
-Array of PolicyInfo objects with groupUserName and roles.
-
-#### Response
-
-```json
-{
-  "message": "Policies updated successfully"
-}
-```
-
----
-
-### List System Roles
-
-List available SSRS system-level roles (e.g., System Administrator, System User).
-
-```http
-GET /api/Security/roles/system
-```
-
-#### Response
-
-```json
-[
-  {
-    "name": "System Administrator",
-    "description": "May manage site-wide settings and security."
-  },
-  {
-    "name": "System User",
-    "description": "May view site-wide settings."
-  }
-]
-```
-
----
-
-### List Catalog Roles
-
-List available SSRS catalog (item-level) roles (e.g., Browser, Publisher, My Reports, Content Manager).
-
-```http
-GET /api/Security/roles/catalog
-```
-
-#### Response
-
-```json
-[
-  {
-    "name": "Browser",
-    "description": "May view folders, reports and subscribe to reports."
-  },
-  {
-    "name": "Content Manager",
-    "description": "May manage content in the Report Server."
-  }
-]
-```
-
----
-
-### Get User/Group Policies
-
-List all items where a user/group has permissions.
-
-```http
-GET /api/Security/policies/user?userOrGroup={userOrGroup}
-```
-
-#### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| userOrGroup | string | Yes | User or group name to search for |
-
-#### Response
-
-```json
-[
-  {
-    "itemPath": "/Sales/Monthly Report",
-    "itemType": "Report",
-    "roles": ["Browser", "Content Manager"]
-  }
-]
-```
-
----
-
-### Get System Policies
-
-Retrieve global (system-level) security policies.
-
-```http
-GET /api/Security/system-policies
-```
-
-#### Response
-
-```json
-{
-  "groupUserName": "DOMAIN\\Admins",
-  "roles": ["System Administrator"]
-}
-```
-
----
-
-### Set System Policies
-
-Set global (system-level) security policies. This will overwrite all existing system policies.
-
-```http
-POST /api/Security/system-policies
-Content-Type: application/json
-
-{
-  "groupUserName": "DOMAIN\\Admins",
-  "roles": ["System Administrator"]
-}
-```
-
-#### Response
-
-```json
-{
-  "message": "System policies updated successfully"
-}
-```
-
----
-
 ## Data Models
 
 ### RenderRequest
@@ -748,6 +889,44 @@ Content-Type: application/json
 }
 ```
 
+### UserInfo
+
+```json
+{
+  "isAuthenticated": "boolean",
+  "name": "string",
+  "authenticationType": "string",
+  "isWindowsIdentity": "boolean",
+  "impersonationLevel": "string",
+  "tokenType": "string",
+  "isSystem": "boolean",
+  "isGuest": "boolean",
+  "isAnonymous": "boolean",
+  "groups": ["string"],
+  "claims": [
+    {
+      "type": "string",
+      "value": "string"
+    }
+  ],
+  "canDelegate": "boolean",
+  "isDemo": "boolean",
+  "serverName": "string",
+  "domainName": "string",
+  "serverTime": "datetime",
+  "serverTimeZone": "string"
+}
+```
+
+### ClaimInfo
+
+```json
+{
+  "type": "string",
+  "value": "string"
+}
+```
+
 ---
 
 ## Error Handling
@@ -762,6 +941,8 @@ The API uses custom SSRSException handling with the following error codes:
 | ParameterTypeMismatch | 400 | Parameter type mismatch |
 | AuthenticationFailed | 401 | Authentication failed |
 | UnexpectedError | 500 | Unexpected server error |
+| ParseError | 500 | Failed to parse SSRS response |
+| UnrecognizedError | 500 | Unrecognized SSRS error pattern |
 
 ---
 
@@ -769,10 +950,10 @@ The API uses custom SSRSException handling with the following error codes:
 
 The API is configured with CORS support for frontend applications:
 
-- Allowed Origins: `http://localhost:5173` (development)
-- Credentials: Allowed
-- Headers: All allowed
-- Methods: All allowed
+- **Allowed Origins**: `http://localhost:5173` (development)
+- **Credentials**: Allowed
+- **Headers**: All allowed
+- **Methods**: All allowed
 
 ---
 
@@ -810,25 +991,72 @@ try {
 }
 ```
 
+### Demo Mode Detection
+
+```javascript
+// Check if the API is running in demo mode
+async function checkDemoMode() {
+  try {
+    const response = await fetch('/api/Reports/test-connection', {
+      credentials: 'include'
+    });
+    const data = await response.json();
+    return data.isDemo || false;
+  } catch (error) {
+    console.error('Failed to check demo mode:', error);
+    return false;
+  }
+}
+
+// Use demo mode status
+const isDemoMode = await checkDemoMode();
+if (isDemoMode) {
+  console.log('API is running in demo mode - no authentication required');
+} else {
+  console.log('API is running in production mode - authentication required');
+}
+```
+
 ### Complete Workflow Example
 
 ```javascript
-// 1. Test connection
+// 1. Check demo mode and test connection
 const status = await fetch('/api/Reports/test-connection', {
   credentials: 'include'
 }).then(r => r.json());
 
-// 2. Browse available reports
+console.log('Demo mode:', status.isDemo);
+console.log('Current user:', status.user);
+
+// 2. Get current user details
+const userInfo = await fetch('/api/Reports/user', {
+  credentials: 'include'
+}).then(r => r.json());
+
+console.log('User details:', userInfo);
+
+// 3. Browse available reports
 const reports = await fetch('/api/Reports/browse', {
   credentials: 'include'
 }).then(r => r.json());
 
-// 3. Get parameters for specific report
+console.log('Available reports:', reports.reports);
+
+// 4. Search for specific reports
+const searchResults = await fetch('/api/Reports/search?query=sales', {
+  credentials: 'include'
+}).then(r => r.json());
+
+console.log('Search results:', searchResults);
+
+// 5. Get parameters for specific report
 const params = await fetch('/api/Reports/parameters?reportPath=/MyReport', {
   credentials: 'include'
 }).then(r => r.json());
 
-// 4. Render report
+console.log('Report parameters:', params);
+
+// 6. Render report
 const pdf = await fetch('/api/Reports/render', {
   method: 'POST',
   credentials: 'include',
@@ -839,19 +1067,45 @@ const pdf = await fetch('/api/Reports/render', {
   })
 }).then(r => r.blob());
 
-// 5. Search for reports
-const searchResults = await fetch('/api/Reports/search?query=sales', {
-  credentials: 'include'
-}).then(r => r.json());
+// 7. Download the rendered report
+const url = URL.createObjectURL(pdf);
+const a = document.createElement('a');
+a.href = url;
+a.download = 'report.pdf';
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);
+URL.revokeObjectURL(url);
 ```
 
 ---
 
 ## Security Considerations
 
+### Production Mode (`IsDemo: false`)
 1. **Authentication**: Windows Authentication is required for all endpoints
 2. **Authorization**: SSRS permissions are enforced at the server level
 3. **HTTPS**: Use HTTPS in production environments
 4. **Input Validation**: All parameters are validated before sending to SSRS
 5. **Error Handling**: Sensitive information is not exposed in error messages
 6. **Pass-through Authentication**: User credentials are passed through to SSRS maintaining security context
+
+### Demo Mode (`IsDemo: true`)
+1. **No Authentication**: All endpoints are accessible without credentials
+2. **Service Account**: All operations use the configured service account
+3. **Development Only**: Should never be used in production environments
+4. **Consistent Context**: All users appear as the same service account to SSRS
+5. **Swagger Friendly**: Perfect for API testing and documentation
+
+---
+
+## Changelog
+
+### Recent Updates
+- Added comprehensive demo mode support
+- Enhanced user information endpoint with detailed context
+- Improved error handling with specific SSRS error codes
+- Added search functionality for reports and folders
+- Complete security management endpoints
+- Management endpoints for CRUD operations
+- Conditional authorization for flexible authentication modes

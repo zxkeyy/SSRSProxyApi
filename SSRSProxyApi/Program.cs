@@ -1,24 +1,71 @@
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using SSRSProxyApi.Models;
 using SSRSProxyApi.Services;
+using SSRSProxyApi.Attributes;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-// Add HttpContextAccessor for pass-through authentication
-builder.Services.AddHttpContextAccessor();
 
 // Configure SSRS settings
 builder.Services.Configure<SSRSConfig>(
     builder.Configuration.GetSection("SSRS"));
 
+// Get SSRS config for Swagger setup
+var ssrsConfig = builder.Configuration.GetSection("SSRS").Get<SSRSConfig>();
+
+// Configure Swagger/OpenAPI
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo 
+    { 
+        Title = "SSRS Proxy API", 
+        Version = "v1",
+        Description = ssrsConfig?.IsDemo == true 
+            ? "SSRS Proxy API - DEMO MODE ENABLED (No authentication required)"
+            : "SSRS Proxy API - Authentication required for all endpoints"
+    });
+    
+    // Only add security definition if not in demo mode
+    if (ssrsConfig?.IsDemo != true)
+    {
+        c.AddSecurityDefinition("windows", new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "negotiate",
+            Description = "Windows Authentication"
+        });
+        
+        c.AddSecurityRequirement(new OpenApiSecurityRequirement
+        {
+            {
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "windows"
+                    }
+                },
+                new string[] {}
+            }
+        });
+    }
+});
+
+// Add HttpContextAccessor for pass-through authentication
+builder.Services.AddHttpContextAccessor();
+
 // Register SSRS service
 builder.Services.AddScoped<ISSRSService, SSRSService>();
+builder.Services.AddScoped<IUserInfoService, UserInfoService>();
+
+// Register custom authorization handler
+builder.Services.AddScoped<IAuthorizationHandler, ConditionalAuthorizationHandler>();
 
 // Add CORS policy for React frontend (adjust origin as needed)
 builder.Services.AddCors(options =>
@@ -39,8 +86,9 @@ builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization(options =>
 {
-    // By default, all incoming requests will be authorized according to the default policy.
-    options.FallbackPolicy = options.DefaultPolicy;
+    // Add the conditional authorization policy
+    options.AddPolicy("ConditionalAuth", policy =>
+        policy.Requirements.Add(new ConditionalAuthorizeAttribute()));
 });
 
 var app = builder.Build();
@@ -49,13 +97,26 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "SSRS Proxy API v1");
+        if (ssrsConfig?.IsDemo == true)
+        {
+            c.DocumentTitle = "SSRS Proxy API - DEMO MODE";
+        }
+    });
 }
 
 app.UseHttpsRedirection();
 
 // Use CORS before authentication/authorization
 app.UseCors("AllowFrontend");
+
+// Serve static files and default files (index.html)
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+app.MapFallbackToFile("index.html");
 
 app.UseAuthentication();
 app.UseAuthorization();

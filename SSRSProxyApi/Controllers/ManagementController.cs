@@ -17,7 +17,7 @@ namespace SSRSProxyApi.Controllers
             _logger = logger;
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpPost("folder")]
         public async Task<IActionResult> CreateFolder([FromQuery] string parentPath, [FromQuery] string folderName, [FromQuery] string description = "")
         {
@@ -25,7 +25,7 @@ namespace SSRSProxyApi.Controllers
             return Ok(new { message = "Folder created successfully" });
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpDelete("folder")]
         public async Task<IActionResult> DeleteFolder([FromQuery] string folderPath)
         {
@@ -33,7 +33,7 @@ namespace SSRSProxyApi.Controllers
             return Ok(new { message = "Folder deleted successfully" });
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpPost("report")]
         public async Task<IActionResult> CreateReport([FromQuery] string parentPath, [FromQuery] string reportName, [FromBody] byte[] definition, [FromQuery] string description = "")
         {
@@ -41,7 +41,7 @@ namespace SSRSProxyApi.Controllers
             return Ok(new { message = "Report created successfully" });
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpDelete("report")]
         public async Task<IActionResult> DeleteReport([FromQuery] string reportPath)
         {
@@ -49,7 +49,7 @@ namespace SSRSProxyApi.Controllers
             return Ok(new { message = "Report deleted successfully" });
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpPost("move")]
         public async Task<IActionResult> MoveItem([FromQuery] string itemPath, [FromQuery] string targetPath)
         {

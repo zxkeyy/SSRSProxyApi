@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SSRSProxyApi.Models;
 using SSRSProxyApi.Services;
+using SSRSProxyApi.Attributes;
 using System.Security.Principal;
 
 namespace SSRSProxyApi.Controllers
@@ -11,11 +12,13 @@ namespace SSRSProxyApi.Controllers
     public class ReportsController : ControllerBase
     {
         private readonly ISSRSService _ssrsService;
+        private readonly IUserInfoService _userInfoService;
         private readonly ILogger<ReportsController> _logger;
 
-        public ReportsController(ISSRSService ssrsService, ILogger<ReportsController> logger)
+        public ReportsController(ISSRSService ssrsService, IUserInfoService userInfoService, ILogger<ReportsController> logger)
         {
             _ssrsService = ssrsService;
+            _userInfoService = userInfoService;
             _logger = logger;
         }
 
@@ -23,14 +26,16 @@ namespace SSRSProxyApi.Controllers
         /// Test SSRS connectivity and basic functionality
         /// </summary>
         /// <returns>SSRS connection status and available reports</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("test-connection")]
         public async Task<ActionResult> TestSSRSConnection()
         {
-            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            var userInfo = _userInfoService.GetCurrentUserInfo();
+            var currentUser = userInfo.Name ?? "Unknown";
+            
             try
             {
-                _logger.LogInformation("User '{User}' testing SSRS connection", currentUser);
+                _logger.LogInformation("User '{User}' testing SSRS connection (Demo: {IsDemo})", currentUser, userInfo.IsDemo);
                 
                 var folderContent = await _ssrsService.BrowseFolderAsync("/");
                 
@@ -38,6 +43,7 @@ namespace SSRSProxyApi.Controllers
                 { 
                     message = "SSRS connection successful", 
                     user = currentUser,
+                    isDemo = userInfo.IsDemo,
                     reportCount = folderContent.Reports.Count,
                     folderCount = folderContent.Folders.Count,
                     reports = folderContent.Reports.Select(r => new { r.Name, r.Path }).Take(5),
@@ -51,6 +57,7 @@ namespace SSRSProxyApi.Controllers
                     message = "SSRS connection failed", 
                     error = ex.Message, 
                     user = currentUser,
+                    isDemo = userInfo.IsDemo,
                     timestamp = DateTime.Now 
                 });
             }
@@ -61,14 +68,16 @@ namespace SSRSProxyApi.Controllers
         /// </summary>
         /// <param name="folderPath">Folder path to browse (default: root "/")</param>
         /// <returns>Folder contents with folders and reports</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("browse")]
         public async Task<ActionResult<FolderContent>> BrowseFolder([FromQuery] string folderPath = "/")
         {
-            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            var userInfo = _userInfoService.GetCurrentUserInfo();
+            var currentUser = userInfo.Name ?? "Unknown";
+            
             try
             {
-                _logger.LogInformation("User '{User}' browsing folder: {FolderPath}", currentUser, folderPath);
+                _logger.LogInformation("User '{User}' browsing folder: {FolderPath} (Demo: {IsDemo})", currentUser, folderPath, userInfo.IsDemo);
                 
                 var folderContent = await _ssrsService.BrowseFolderAsync(folderPath);
                 return Ok(folderContent);
@@ -85,14 +94,16 @@ namespace SSRSProxyApi.Controllers
         /// </summary>
         /// <param name="folderPath">Folder path (default: root "/")</param>
         /// <returns>List of reports</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet]
         public async Task<ActionResult<IEnumerable<ReportInfo>>> GetReports([FromQuery] string folderPath = "/")
         {
-            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            var userInfo = _userInfoService.GetCurrentUserInfo();
+            var currentUser = userInfo.Name ?? "Unknown";
+            
             try
             {
-                _logger.LogInformation("User '{User}' retrieving reports from folder: {FolderPath}", currentUser, folderPath);
+                _logger.LogInformation("User '{User}' retrieving reports from folder: {FolderPath} (Demo: {IsDemo})", currentUser, folderPath, userInfo.IsDemo);
                 
                 var reports = await _ssrsService.GetReportsAsync(folderPath);
                 return Ok(reports);
@@ -109,11 +120,13 @@ namespace SSRSProxyApi.Controllers
         /// </summary>
         /// <param name="reportPath">Report path (can include folders) - pass as query parameter</param>
         /// <returns>List of report parameters</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("parameters")]
         public async Task<ActionResult<IEnumerable<ReportParameter>>> GetReportParameters([FromQuery] string reportPath)
         {
-            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            var userInfo = _userInfoService.GetCurrentUserInfo();
+            var currentUser = userInfo.Name ?? "Unknown";
+            
             try
             {
                 if (string.IsNullOrEmpty(reportPath))
@@ -127,7 +140,7 @@ namespace SSRSProxyApi.Controllers
                     reportPath = "/" + reportPath;
                 }
 
-                _logger.LogInformation("User '{User}' retrieving parameters for report: {ReportPath}", currentUser, reportPath);
+                _logger.LogInformation("User '{User}' retrieving parameters for report: {ReportPath} (Demo: {IsDemo})", currentUser, reportPath, userInfo.IsDemo);
                 var parameters = await _ssrsService.GetReportParametersAsync(reportPath);
                 return Ok(parameters);
             }
@@ -156,11 +169,13 @@ namespace SSRSProxyApi.Controllers
         /// </summary>
         /// <param name="request">Report path and parameters</param>
         /// <returns>PDF file</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpPost("render")]
         public async Task<ActionResult> RenderReport([FromBody] RenderRequest request)
         {
-            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            var userInfo = _userInfoService.GetCurrentUserInfo();
+            var currentUser = userInfo.Name ?? "Unknown";
+            
             try
             {
                 if (string.IsNullOrEmpty(request.ReportPath))
@@ -174,8 +189,8 @@ namespace SSRSProxyApi.Controllers
                     request.ReportPath = "/" + request.ReportPath;
                 }
 
-                _logger.LogInformation("User '{User}' rendering report: {ReportPath} with {ParameterCount} parameters", 
-                    currentUser, request.ReportPath, request.Parameters.Count);
+                _logger.LogInformation("User '{User}' rendering report: {ReportPath} with {ParameterCount} parameters (Demo: {IsDemo})", 
+                    currentUser, request.ReportPath, request.Parameters.Count, userInfo.IsDemo);
 
                 var pdfBytes = await _ssrsService.RenderReportAsync(request.ReportPath, request.Parameters);
                 
@@ -208,11 +223,13 @@ namespace SSRSProxyApi.Controllers
         /// <param name="format">Output format (PDF, EXCEL, WORD, CSV, XML)</param>
         /// <param name="request">Report path and parameters</param>
         /// <returns>Report in specified format</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpPost("render/{format}")]
         public async Task<ActionResult> RenderReportInFormat(string format, [FromBody] RenderRequest request)
         {
-            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            var userInfo = _userInfoService.GetCurrentUserInfo();
+            var currentUser = userInfo.Name ?? "Unknown";
+            
             try
             {
                 if (string.IsNullOrEmpty(request.ReportPath))
@@ -234,8 +251,8 @@ namespace SSRSProxyApi.Controllers
                     request.ReportPath = "/" + request.ReportPath;
                 }
 
-                _logger.LogInformation("User '{User}' rendering report: {ReportPath} in format: {Format} with {ParameterCount} parameters", 
-                    currentUser, request.ReportPath, upperFormat, request.Parameters.Count);
+                _logger.LogInformation("User '{User}' rendering report: {ReportPath} in format: {Format} with {ParameterCount} parameters (Demo: {IsDemo})", 
+                    currentUser, request.ReportPath, upperFormat, request.Parameters.Count, userInfo.IsDemo);
 
                 var reportBytes = await _ssrsService.RenderReportAsync(request.ReportPath, request.Parameters, upperFormat);
                 
@@ -269,22 +286,13 @@ namespace SSRSProxyApi.Controllers
         /// Get current user information
         /// </summary>
         /// <returns>Current user details</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("user")]
         public ActionResult GetCurrentUser()
         {
-            var user = HttpContext.User;
-            var identity = user?.Identity;
+            var userInfo = _userInfoService.GetCurrentUserInfo();
             
-            var userInfo = new
-            {
-                IsAuthenticated = identity?.IsAuthenticated ?? false,
-                Name = identity?.Name ?? "Unknown",
-                AuthenticationType = identity?.AuthenticationType ?? "None",
-                IsWindowsIdentity = OperatingSystem.IsWindows() && identity is WindowsIdentity
-            };
-
-            _logger.LogInformation("Current user info requested: {UserName}", userInfo.Name);
+            _logger.LogInformation("Current user info requested: {UserName} (Demo: {IsDemo})", userInfo.Name, userInfo.IsDemo);
             return Ok(userInfo);
         }
 
@@ -293,17 +301,19 @@ namespace SSRSProxyApi.Controllers
         /// </summary>
         /// <param name="query">Search term (case-insensitive, matches name or description)</param>
         /// <returns>List of matching reports and folders</returns>
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("search")]
         public async Task<ActionResult<IEnumerable<object>>> Search([FromQuery] string query)
         {
-            var currentUser = HttpContext.User?.Identity?.Name ?? "Unknown";
+            var userInfo = _userInfoService.GetCurrentUserInfo();
+            var currentUser = userInfo.Name ?? "Unknown";
+            
             if (string.IsNullOrWhiteSpace(query))
                 return BadRequest(new { message = "Query parameter is required" });
 
             try
             {
-                _logger.LogInformation("User '{User}' searching for items with query: {Query}", currentUser, query);
+                _logger.LogInformation("User '{User}' searching for items with query: {Query} (Demo: {IsDemo})", currentUser, query, userInfo.IsDemo);
                 var results = new List<object>();
                 async Task BrowseRecursive(string path)
                 {

@@ -18,7 +18,7 @@ namespace SSRSProxyApi.Controllers
             _logger = logger;
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("policies")]
         public async Task<ActionResult<IEnumerable<PolicyInfo>>> GetPolicies([FromQuery] string itemPath)
         {
@@ -34,7 +34,7 @@ namespace SSRSProxyApi.Controllers
             }
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpPost("policies")]
         public async Task<ActionResult> SetPolicies([FromQuery] string itemPath, [FromBody] IEnumerable<PolicyInfo> policies)
         {
@@ -50,7 +50,7 @@ namespace SSRSProxyApi.Controllers
             }
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("roles/system")]
         public async Task<ActionResult<IEnumerable<RoleInfo>>> ListSystemRoles()
         {
@@ -66,7 +66,7 @@ namespace SSRSProxyApi.Controllers
             }
         }
 
-        [Authorize]
+        [Authorize(Policy = "ConditionalAuth")]
         [HttpGet("roles/catalog")]
         public async Task<ActionResult<IEnumerable<RoleInfo>>> ListCatalogRoles()
         {
@@ -82,61 +82,102 @@ namespace SSRSProxyApi.Controllers
             }
         }
 
-        [Authorize]
-        [HttpGet("policies/user")]
-        public async Task<ActionResult> GetPoliciesForUserOrGroup([FromQuery] string userOrGroup)
+        [Authorize(Policy = "ConditionalAuth")]
+        [HttpGet("roles")]
+        public async Task<ActionResult<IEnumerable<RoleInfo>>> ListRoles()
         {
             try
             {
-                // Recursively browse all folders and reports starting from root
-                var allItems = new List<(string Path, string Type)>();
-                async Task BrowseRecursive(string path)
-                {
-                    var content = await _ssrsService.BrowseFolderAsync(path);
-                    foreach (var folder in content.Folders)
-                    {
-                        allItems.Add((folder.Path, "Folder"));
-                        await BrowseRecursive(folder.Path);
-                    }
-                    foreach (var report in content.Reports)
-                    {
-                        allItems.Add((report.Path, "Report"));
-                    }
-                }
-                await BrowseRecursive("/");
-
-                var result = new List<object>();
-                foreach (var item in allItems)
-                {
-                    try
-                    {
-                        var policies = await _ssrsService.GetPoliciesAsync(item.Path);
-                        var match = policies.FirstOrDefault(p => string.Equals(p.GroupUserName, userOrGroup, StringComparison.OrdinalIgnoreCase));
-                        if (match != null)
-                        {
-                            result.Add(new {
-                                ItemPath = item.Path,
-                                ItemType = item.Type,
-                                Roles = match.Roles
-                            });
-                        }
-                    }
-                    catch (SSRSException ex)
-                    {
-                        _logger.LogWarning(ex, "Error getting policies for item: {ItemPath}", item.Path);
-                    }
-                }
-                return Ok(result);
+                var roles = await _ssrsService.ListRolesAsync();
+                return Ok(roles);
             }
-            catch (Exception ex)
+            catch (SSRSException ex)
             {
-                _logger.LogError(ex, "Error getting policies for user/group: {UserOrGroup}", userOrGroup);
-                return StatusCode(500, new { message = "Error getting policies for user/group", error = ex.Message });
+                _logger.LogError(ex, "Error listing roles");
+                return StatusCode(ex.HttpStatusCode, new { message = ex.Message, errorCode = ex.ErrorCode });
             }
         }
 
-        [Authorize]
-        [HttpGet("system-policies")]
+        [Authorize(Policy = "ConditionalAuth")]
+        [HttpGet("policies/user")]
+        public async Task<ActionResult<IEnumerable<object>>> GetUserPolicies([FromQuery] string userOrGroup)
+        {
+            if (string.IsNullOrEmpty(userOrGroup))
+            {
+                return BadRequest(new { message = "userOrGroup parameter is required" });
+            }
+
+            try
+            {
+                var results = new List<object>();
+                
+                // This is a simplified implementation - you might want to implement a more efficient search
+                async Task CheckPoliciesRecursive(string path)
+                {
+                    try
+                    {
+                        var policies = await _ssrsService.GetPoliciesAsync(path);
+                        var userPolicies = policies.Where(p => 
+                            p.GroupUserName.Equals(userOrGroup, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (userPolicies.Any())
+                        {
+                            // Determine item type by trying to browse it
+                            string itemType = "Unknown";
+                            try
+                            {
+                                var content = await _ssrsService.BrowseFolderAsync(path);
+                                itemType = "Folder";
+                            }
+                            catch
+                            {
+                                itemType = "Report"; // Assume it's a report if we can't browse it
+                            }
+                            
+                            results.Add(new
+                            {
+                                itemPath = path,
+                                itemType = itemType,
+                                roles = userPolicies.SelectMany(p => p.Roles).Distinct().ToArray()
+                            });
+                        }
+                        
+                        // Recursively check subfolders (only if this is a folder)
+                        try
+                        {
+                            var content = await _ssrsService.BrowseFolderAsync(path);
+                            foreach (var folder in content.Folders)
+                            {
+                                await CheckPoliciesRecursive(folder.Path);
+                            }
+                            foreach (var report in content.Reports)
+                            {
+                                await CheckPoliciesRecursive(report.Path);
+                            }
+                        }
+                        catch
+                        {
+                            // Not a folder, skip recursion
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug("Could not check policies for path {Path}: {Error}", path, ex.Message);
+                    }
+                }
+                
+                await CheckPoliciesRecursive("/");
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting user policies for: {UserOrGroup}", userOrGroup);
+                return StatusCode(500, new { message = "Error retrieving user policies", error = ex.Message });
+            }
+        }
+
+        [Authorize(Policy = "ConditionalAuth")]
+        [HttpGet("policies/system")]
         public async Task<ActionResult<IEnumerable<PolicyInfo>>> GetSystemPolicies()
         {
             try
@@ -151,8 +192,8 @@ namespace SSRSProxyApi.Controllers
             }
         }
 
-        [Authorize]
-        [HttpPost("system-policies")]
+        [Authorize(Policy = "ConditionalAuth")]
+        [HttpPost("policies/system")]
         public async Task<ActionResult> SetSystemPolicies([FromBody] IEnumerable<PolicyInfo> policies)
         {
             try

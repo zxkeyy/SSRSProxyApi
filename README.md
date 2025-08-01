@@ -1,4 +1,4 @@
-# SSRS Proxy API
+﻿# SSRS Proxy API
 
 [![.NET](https://img.shields.io/badge/.NET-8.0-blue.svg)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -8,14 +8,27 @@ A modern **ASP.NET Core Web API** that provides a RESTful interface to **SQL Ser
 
 ## Features
 
-- **:lock: Windows Authentication**: Seamless integration with existing Active Directory infrastructure
-- **:file_folder: Folder Navigation**: Browse SSRS folder hierarchy with full metadata
-- **:bar_chart: Dynamic Report Rendering**: Support for multiple output formats (PDF, Excel, Word, CSV, XML, Images)
-- **:gear: Parameter Management**: Automatic discovery and validation of report parameters
-- **:arrows_counterclockwise: Session Management**: Proper SSRS session handling with ExecutionHeaders
-- **:shield: Security**: Pass-through authentication preserving user permissions
-- **:memo: Comprehensive Logging**: Detailed logging for debugging and monitoring
-- **:dart: RESTful Design**: Clean, predictable API endpoints following REST principles
+- **🔒 Windows Authentication**: Seamless integration with existing Active Directory infrastructure
+- **🗂️ Folder Navigation**: Browse SSRS folder hierarchy with full metadata
+- **📊 Dynamic Report Rendering**: Support for multiple output formats (PDF, Excel, Word, CSV, XML, Images)
+- **⚙️ Parameter Management**: Automatic discovery and validation of report parameters
+- **🔄 Session Management**: Proper SSRS session handling with ExecutionHeaders
+- **🛡️ Security Management**: Complete SSRS permissions and role management
+- **📝 Report Management**: Create, delete, and move reports and folders
+- **🔍 Search Functionality**: Recursive search across reports and folders
+- **🚀 Demo Mode**: Development-friendly mode that bypasses authentication
+- **📋 Comprehensive Logging**: Detailed logging for debugging and monitoring
+- **🎯 RESTful Design**: Clean, predictable API endpoints following REST principles
+
+## Frontend
+
+A modern React frontend is available for this API, providing a user-friendly interface for browsing, searching, and rendering SSRS reports.
+
+- **Repository:** https://github.com/zxkeyy/SSRSUI
+- **Features:** Authentication, report browsing, parameter input, export/download, and more.
+- **Quick Start:** See the frontend README for setup instructions.
+
+The frontend communicates with this API via HTTP and is designed for seamless integration.
 
 ## Table of Contents
 
@@ -23,10 +36,8 @@ A modern **ASP.NET Core Web API** that provides a RESTful interface to **SQL Ser
 - [Configuration](#configuration)
 - [API Documentation](#api-documentation)
 - [Authentication](#authentication)
-- [Examples](#examples)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
 
 ## Quick Start
 
@@ -34,8 +45,8 @@ A modern **ASP.NET Core Web API** that provides a RESTful interface to **SQL Ser
 
 - **.NET 8.0** SDK or later
 - **SQL Server Reporting Services (SSRS)** 2008 or later
-- **Windows Server/IIS** with Windows Authentication enabled
-- **Active Directory** environment (for authentication)
+- **Windows Server/IIS** with Windows Authentication enabled (for production)
+- **Active Directory** environment (for authentication, unless using demo mode)
 
 ### Installation
 
@@ -61,8 +72,11 @@ A modern **ASP.NET Core Web API** that provides a RESTful interface to **SQL Ser
 
 5. **Test the API**
    ```bash
-   # Test connectivity
+   # Test connectivity (with authentication)
    curl -X GET "https://localhost:7134/api/Reports/test-connection" -u "domain\username"
+   
+   # Test connectivity (demo mode)
+   curl -X GET "https://localhost:7134/api/Reports/test-connection"
    ```
 
 ## Configuration
@@ -85,7 +99,8 @@ Update your `appsettings.json` or `appsettings.Development.json`:
       "Username": "",
       "Password": ""
     },
-    "Timeout": 300
+    "Timeout": 300,
+    "IsDemo": false
   },
   "Logging": {
     "LogLevel": {
@@ -100,18 +115,19 @@ Update your `appsettings.json` or `appsettings.Development.json`:
 
 | Setting | Description | Required | Default |
 |---------|-------------|----------|---------|
-| `ReportServerUrl` | Base URL of your SSRS Report Server | :white_check_mark: | - |
-| `ReportService` | SOAP endpoint for Report Service 2005 | :white_check_mark: | - |
-| `ReportExecution` | SOAP endpoint for Report Execution 2005 | :white_check_mark: | - |
-| `Authentication.Type` | Authentication type (Windows) | :white_check_mark: | Windows |
-| `Authentication.Domain` | Windows domain (leave empty for pass-through) | :x: | - |
-| `Authentication.Username` | Service account username (optional) | :x: | - |
-| `Authentication.Password` | Service account password (optional) | :x: | - |
-| `Timeout` | Request timeout in seconds | :x: | 300 |
+| `ReportServerUrl` | Base URL of your SSRS Report Server | ✅ | - |
+| `SoapEndpoints.ReportService` | SOAP endpoint for Report Service 2005 | ✅ | - |
+| `SoapEndpoints.ReportExecution` | SOAP endpoint for Report Execution 2005 | ✅ | - |
+| `Authentication.Type` | Authentication type (Windows) | ✅ | Windows |
+| `Authentication.Domain` | Windows domain (leave empty for pass-through) | ❌ | - |
+| `Authentication.Username` | Service account username (optional) | ❌ | - |
+| `Authentication.Password` | Service account password (optional) | ❌ | - |
+| `IsDemo` | Enable demo mode (bypasses user auth, uses service account) | ❌ | false |
+| `Timeout` | Request timeout in seconds | ❌ | 300 |
 
 ### Authentication Modes
 
-#### 1. **Pass-through Authentication** (Recommended)
+#### 1. **Pass-through Authentication** (Recommended for Production)
 ```json
 {
   "Authentication": {
@@ -119,7 +135,8 @@ Update your `appsettings.json` or `appsettings.Development.json`:
     "Domain": "",
     "Username": "",
     "Password": ""
-  }
+  },
+  "IsDemo": false
 }
 ```
 Uses the current user's Windows credentials. Requires Windows Authentication on IIS.
@@ -132,511 +149,98 @@ Uses the current user's Windows credentials. Requires Windows Authentication on 
     "Domain": "YOURDOMAIN",
     "Username": "ServiceAccount",
     "Password": "SecurePassword123"
-  }
+  },
+  "IsDemo": false
 }
 ```
 Uses a dedicated service account for all SSRS operations.
 
+#### 3. **Demo Mode** (Development/Testing)
+```json
+{
+  "Authentication": {
+    "Type": "Windows",
+    "Domain": "YOURDOMAIN",
+    "Username": "ServiceAccount",
+    "Password": "SecurePassword123"
+  },
+  "IsDemo": true
+}
+```
+**Demo mode bypasses user authentication** and always uses the configured service account credentials. This is useful for:
+- Development environments where Windows Authentication is not available
+- Testing scenarios
+- Demos and presentations
+- Non-Windows hosting environments
+- Swagger UI testing without authentication prompts
+
+⚠️ **Warning**: Only use demo mode in development or testing environments. Do not enable this in production as it bypasses security controls.
+
 ## API Documentation
 
-### Base URL
+### Base URLs
 ```
-https://localhost:7134/api/Reports
+Reports:     https://localhost:7134/api/Reports
+Security:    https://localhost:7134/api/Security  
+Management:  https://localhost:7134/api/Management
 ```
 
-### Endpoints Overview
+### Complete Endpoints Overview
 
+#### Reports Controller (`/api/Reports`)
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| `GET` | `/test-connection` | Test SSRS connectivity | :white_check_mark: |
-| `GET` | `/browse` | Browse folder structure | :white_check_mark: |
-| `GET` | `/` | Get reports (legacy) | :white_check_mark: |
-| `GET` | `/parameters` | Get report parameters | :white_check_mark: |
-| `POST` | `/render` | Render report as PDF | :white_check_mark: |
-| `POST` | `/render/{format}` | Render report in specific format | :white_check_mark: |
-| `GET` | `/user` | Get current user info | :white_check_mark: |
-| `GET` | `/security/policies` | List item policies | :white_check_mark: |
-| `POST` | `/security/policies` | Set item policies | :white_check_mark: |
-| `GET` | `/security/roles` | List available roles | :white_check_mark: |
-| `GET` | `/security/policies/user` | Get user/group permissions | :white_check_mark: |
+| `GET` | `/test-connection` | Test SSRS connectivity | ✅* |
+| `GET` | `/browse` | Browse folder structure | ✅* |
+| `GET` | `/` | Get reports (legacy) | ✅* |
+| `GET` | `/parameters` | Get report parameters | ✅* |
+| `POST` | `/render` | Render report as PDF | ✅* |
+| `POST` | `/render/{format}` | Render report in specific format | ✅* |
+| `GET` | `/user` | Get current user info | ✅* |
+| `GET` | `/search` | Search reports and folders | ✅* |
+
+#### Security Controller (`/api/Security`)
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/policies` | List item policies | ✅* |
+| `POST` | `/policies` | Set item policies | ✅* |
+| `GET` | `/roles` | List all available roles | ✅* |
+| `GET` | `/roles/system` | List system roles | ✅* |
+| `GET` | `/roles/catalog` | List catalog roles | ✅* |
+| `GET` | `/policies/user` | Get user/group permissions | ✅* |
+| `GET` | `/policies/system` | Get system policies | ✅* |
+| `POST` | `/policies/system` | Set system policies | ✅* |
+
+#### Management Controller (`/api/Management`)
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `POST` | `/folder` | Create a new folder | ✅* |
+| `DELETE` | `/folder` | Delete an existing folder | ✅* |
+| `POST` | `/report` | Create a new report | ✅* |
+| `DELETE` | `/report` | Delete an existing report | ✅* |
+| `POST` | `/move` | Move item to new location | ✅* |
+
+*Auth Required: Authentication is bypassed when `IsDemo: true` is configured.
 
 ---
 
-### **Test Connection**
-Check SSRS connectivity and view available reports.
-
-```http
-GET /api/Reports/test-connection
-```
-
-**Response:**
-```json
-{
-  "message": "SSRS connection successful",
-  "user": "DOMAIN\\username",
-  "reportCount": 15,
-  "folderCount": 3,
-  "reports": [
-    { "name": "Sales Report", "path": "/Sales Report" },
-    { "name": "Inventory Report", "path": "/Inventory Report" }
-  ],
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
-
----
-
-### **Browse Folders**
-Navigate SSRS folder hierarchy with full metadata.
-
-```http
-GET /api/Reports/browse?folderPath=/Sales
-```
-
-**Parameters:**
-- `folderPath` (query, optional): Folder path to browse. Default: `/`
-
-**Response:**
-```json
-{
-  "currentPath": "/Sales",
-  "folders": [
-    {
-      "name": "Regional Reports",
-      "path": "/Sales/Regional Reports",
-      "createdDate": "2024-01-01T00:00:00Z",
-      "modifiedDate": "2024-01-10T15:30:00Z",
-      "description": "Regional sales analysis reports"
-    }
-  ],
-  "reports": [
-    {
-      "name": "Monthly Sales",
-      "path": "/Sales/Monthly Sales",
-      "type": "Report",
-      "createdDate": "2024-01-01T00:00:00Z",
-      "modifiedDate": "2024-01-10T15:30:00Z",
-      "description": "Monthly sales performance report"
-    }
-  ]
-}
-```
-
----
-
-### **Get Report Parameters**
-Retrieve available parameters for a specific report.
-
-```http
-GET /api/Reports/parameters?reportPath=/Sales/Monthly%20Sales
-```
-
-**Parameters:**
-- `reportPath` (query, required): Full path to the report
-
-**Response:**
-```json
-[
-  {
-    "name": "StartDate",
-    "type": "DateTime",
-    "nullable": false,
-    "allowBlank": false,
-    "multiValue": false,
-    "validValues": [],
-    "defaultValue": "2024-01-01",
-    "prompt": "Start Date"
-  },
-  {
-    "name": "Department",
-    "type": "String",
-    "nullable": true,
-    "allowBlank": true,
-    "multiValue": true,
-    "validValues": ["Sales", "Marketing", "Support"],
-    "defaultValue": "Sales",
-    "prompt": "Department(s)"
-  }
-]
-```
-
----
-
-### **Render Report (PDF)**
-Render a report as PDF with parameters.
-
-```http
-POST /api/Reports/render
-Content-Type: application/json
-
-{
-  "reportPath": "/Sales/Monthly Sales",
-  "parameters": {
-    "StartDate": "2024-01-01",
-    "EndDate": "2024-01-31",
-    "Department": "Sales"
-  }
-}
-```
-
-**Request Body:**
-```json
-{
-  "reportPath": "string (required)",
-  "parameters": {
-    "key1": "value1",
-    "key2": "value2"
-  }
-}
-```
-
-**Response:** Binary PDF file with appropriate headers
-
----
-
-### **Render Report (Multiple Formats)**
-Render a report in various formats.
-
-```http
-POST /api/Reports/render/{format}
-Content-Type: application/json
-
-{
-  "reportPath": "/Sales/Monthly Sales",
-  "parameters": {
-    "StartDate": "2024-01-01",
-    "EndDate": "2024-01-31"
-  }
-}
-```
-
-**Supported Formats:**
-- `PDF` - Adobe PDF format
-- `EXCEL` - Microsoft Excel (.xlsx)
-- `WORD` - Microsoft Word (.docx)
-- `CSV` - Comma-separated values
-- `XML` - XML format
-- `IMAGE` - PNG image format
-
-**Response:** Binary file in requested format
-
----
-
-### **Get Current User**
-Retrieve information about the authenticated user.
-
-```http
-GET /api/Reports/user
-```
-
-**Response:**
-```json
-{
-  "isAuthenticated": true,
-  "name": "DOMAIN\\username",
-  "authenticationType": "Negotiate",
-  "isWindowsIdentity": true
-}
-```
-
-## Security Management
-
-The API provides endpoints to manage SSRS permissions and roles:
-
-- **List policies for an item:**
-  - `GET /api/Security/policies?itemPath=...`
-- **Set policies for an item:**
-  - `POST /api/Security/policies?itemPath=...` (replaces all policies)
-- **List available SSRS roles:**
-  - `GET /api/Security/roles`
-- **List all items where a user/group has permissions:**
-  - `GET /api/Security/policies/user?userOrGroup=...`
-
-### Example: Get all permissions for a user/group
-
-```http
-GET /api/Security/policies/user?userOrGroup=DOMAIN\\username
-```
-
-**Response:**
-```json
-{
-    "itemPath": "/Sales/Monthly Sales",
-    "itemType": "Report",
-    "roles": ["Browser", "Content Manager"]
-  },
-  {
-    "itemPath": "/Sales",
-    "itemType": "Folder",
-    "roles": ["Browser"]
-  }
-]
-```
-
-See `docs/API_REFERENCE.md` for full details on all endpoints.
+See `docs/API_REFERENCE.md` for detailed endpoint documentation with request/response examples.
 
 ## Authentication
 
-The API uses **Windows Authentication (Negotiate)** by default, supporting:
+The API supports flexible authentication modes:
 
-- **NTLM Authentication**
-- **Kerberos Authentication**
-- **Pass-through credentials**
-- **Service account delegation**
+### Production Mode (`IsDemo: false`)
+- **Windows Authentication (Negotiate)** with NTLM/Kerberos support
+- **Pass-through credentials** preserving user permissions
+- **Service account delegation** for centralized access
 
-### Client Examples
-
-#### JavaScript (Fetch API)
-```javascript
-// Include credentials for Windows Authentication
-const response = await fetch('/api/Reports/browse', {
-  credentials: 'include',
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
-```
-
-#### C# (HttpClient)
-```csharp
-using var handler = new HttpClientHandler()
-{
-    UseDefaultCredentials = true
-};
-using var client = new HttpClient(handler);
-
-var response = await client.GetAsync("https://localhost:7134/api/Reports/browse");
-```
-
-#### PowerShell
-```powershell
-# Using current user credentials
-Invoke-RestMethod -Uri "https://localhost:7134/api/Reports/browse" -UseDefaultCredentials
-
-# Using specific credentials
-$cred = Get-Credential
-Invoke-RestMethod -Uri "https://localhost:7134/api/Reports/browse" -Credential $cred
-```
-
-#### cURL
-```bash
-# Windows (current user)
-curl -X GET "https://localhost:7134/api/Reports/browse" --negotiate -u :
-
-# Unix/Linux
-curl -X GET "https://localhost:7134/api/Reports/browse" -u "domain\\username:password"
-```
-
-## Examples
-
-### Complete Workflow Example
-
-```javascript
-class SSRSClient {
-  constructor(baseUrl) {
-    this.baseUrl = baseUrl;
-    this.headers = {
-      'Content-Type': 'application/json'
-    };
-  }
-
-  async testConnection() {
-    const response = await fetch(`${this.baseUrl}/test-connection`, {
-      credentials: 'include'
-    });
-    return response.json();
-  }
-
-  async browseFolder(folderPath = '/') {
-    const response = await fetch(`${this.baseUrl}/browse?folderPath=${encodeURIComponent(folderPath)}`, {
-      credentials: 'include'
-    });
-    return response.json();
-  }
-
-  async getReportParameters(reportPath) {
-    const response = await fetch(`${this.baseUrl}/parameters?reportPath=${encodeURIComponent(reportPath)}`, {
-      credentials: 'include'
-    });
-    return response.json();
-  }
-
-  async renderReport(reportPath, parameters = {}, format = 'PDF') {
-    const endpoint = format.toUpperCase() === 'PDF' ? '/render' : `/render/${format}`;
-    
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: this.headers,
-      body: JSON.stringify({
-        reportPath,
-        parameters
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Report rendering failed: ${error.message}`);
-    }
-
-    return response.blob();
-  }
-
-  async downloadReport(reportPath, parameters, filename, format = 'PDF') {
-    try {
-      const blob = await this.renderReport(reportPath, parameters, format);
-      
-      // Create download link
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      return true;
-    } catch (error) {
-      console.error('Download failed:', error);
-      return false;
-    }
-  }
-}
-
-// Usage
-const ssrs = new SSRSClient('https://localhost:7134/api/Reports');
-
-// Test connection
-const status = await ssrs.testConnection();
-console.log('SSRS Status:', status);
-
-// Browse reports
-const reports = await ssrs.browseFolder('/Sales');
-console.log('Available reports:', reports);
-
-// Get parameters for a specific report
-const parameters = await ssrs.getReportParameters('/Sales/Monthly Report');
-console.log('Report parameters:', parameters);
-
-// Render and download report
-await ssrs.downloadReport(
-  '/Sales/Monthly Report',
-  {
-    StartDate: '2024-01-01',
-    EndDate: '2024-01-31',
-    Department: 'Sales'
-  },
-  'monthly-sales-report.pdf'
-);
-```
-
-### React Hook Example
-
-```jsx
-import { useState, useEffect } from 'react';
-
-export function useSSRSReports() {
-  const [reports, setReports] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const fetchReports = async (folderPath = '/') => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await fetch(`/api/Reports/browse?folderPath=${encodeURIComponent(folderPath)}`, {
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch reports: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      setReports(data.reports);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const renderReport = async (reportPath, parameters = {}, format = 'PDF') => {
-    const endpoint = format.toUpperCase() === 'PDF' ? '/render' : `/render/${format}`;
-    
-    const response = await fetch(`/api/Reports${endpoint}`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        reportPath,
-        parameters
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message);
-    }
-
-    return response.blob();
-  };
-
-  useEffect(() => {
-    fetchReports();
-  }, []);
-
-  return {
-    reports,
-    loading,
-    error,
-    fetchReports,
-    renderReport
-  };
-}
-
-// Component usage
-function ReportsList() {
-  const { reports, loading, error, renderReport } = useSSRSReports();
-
-  const handleDownload = async (reportPath) => {
-    try {
-      const blob = await renderReport(reportPath);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${reportPath.split('/').pop()}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      alert(`Download failed: ${error.message}`);
-    }
-  };
-
-  if (loading) return <div>Loading reports...</div>;
-  if (error) return <div>Error: {error}</div>;
-
-  return (
-    <div>
-      <h2>Available Reports</h2>
-      <ul>
-        {reports.map(report => (
-          <li key={report.path}>
-            <span>{report.name}</span>
-            <button onClick={() => handleDownload(report.path)}>
-              Download PDF
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-```
+### Demo Mode (`IsDemo: true`)
+- **No authentication required** - perfect for development
+- **Service account credentials** used for all operations
+- **Swagger UI works without authentication prompts**
+- **Consistent user context** across all requests
+   
 
 ## Development
 
@@ -644,17 +248,24 @@ function ReportsList() {
 
 ```
 SSRSProxyApi/
-??? Controllers/
-?   ??? ReportsController.cs      # API endpoints
-??? Services/
-?   ??? ISSRSService.cs           # Service interface
-?   ??? SSRSService.cs            # SSRS integration logic
-??? Models/
-?   ??? ReportModels.cs           # Data models
-?   ??? SSRSConfig.cs             # Configuration models
-??? Program.cs                    # Application startup
-??? appsettings.json              # Configuration
-??? SSRSProxyApi.csproj          # Project file
+├── Controllers/
+│   ├── ReportsController.cs      # Report operations
+│   ├── SecurityController.cs     # Security management
+│   └── ManagementController.cs   # Report/folder CRUD
+├── Services/
+│   ├── ISSRSService.cs          # Service interface
+│   ├── SSRSService.cs           # SSRS integration logic
+│   ├── IUserInfoService.cs      # User info interface
+│   └── UserInfoService.cs       # User info service
+├── Models/
+│   ├── ReportModels.cs          # Data models
+│   └── SSRSConfig.cs            # Configuration models
+├── Attributes/
+│   └── ConditionalAuthorizeAttribute.cs  # Demo mode auth
+├── wwwroot/                     # Static web files
+├── Program.cs                   # Application startup
+├── appsettings.json             # Configuration
+└── SSRSProxyApi.csproj         # Project file
 ```
 
 ### Key Dependencies
@@ -691,11 +302,25 @@ dotnet publish -c Release -o ./publish
 
 2. **Configure development settings**
    ```bash
-   # Create development config
+   # Copy and edit development config
    cp appsettings.json appsettings.Development.json
    ```
 
-3. **Enable detailed logging**
+3. **Enable demo mode for development**
+   ```json
+   {
+     "SSRS": {
+       "Authentication": {
+         "Domain": "YOURDOMAIN",
+         "Username": "ServiceAccount",
+         "Password": "Password123"
+       },
+       "IsDemo": true
+     }
+   }
+   ```
+
+4. **Enable detailed logging**
    ```json
    {
      "Logging": {
@@ -707,7 +332,7 @@ dotnet publish -c Release -o ./publish
    }
    ```
 
-4. **Run in development mode**
+5. **Run in development mode**
    ```bash
    dotnet run --environment Development
    ```
@@ -718,6 +343,8 @@ When running in development mode, Swagger documentation is available at:
 - **Swagger UI**: `https://localhost:7134/swagger`
 - **OpenAPI Spec**: `https://localhost:7134/swagger/v1/swagger.json`
 
+In demo mode, Swagger UI will show "DEMO MODE ENABLED" and won't require authentication.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -727,12 +354,32 @@ When running in development mode, Swagger documentation is available at:
 **Problem:** Getting 401 Unauthorized errors
 
 **Solutions:**
-- Ensure Windows Authentication is enabled in IIS
+- **For Production**: Ensure Windows Authentication is enabled in IIS
+- **For Development**: Enable demo mode (`"IsDemo": true`)
 - Check that the application pool identity has access to SSRS
 - Verify SSRS permissions for the user/service account
 - Test with `curl --negotiate -u :` for credential validation
 
-#### 2. **Report Not Found (404)**
+#### 2. **Demo Mode Issues**
+
+**Problem:** Demo mode not working or still asking for credentials
+
+**Solutions:**
+- Verify `"IsDemo": true` is set in configuration
+- Ensure service account credentials are configured
+- Check that the service account has SSRS permissions
+- Restart the application after configuration changes
+
+#### 3. **Swagger UI Authentication**
+
+**Problem:** Swagger UI keeps asking for credentials
+
+**Solutions:**
+- Enable demo mode for development: `"IsDemo": true`
+- Check that conditional authorization is working
+- Verify the `ConditionalAuthorizeAttribute` is properly registered
+
+#### 4. **Report Not Found (404)**
 
 **Problem:** Reports return "Item not found" errors
 
@@ -742,7 +389,7 @@ When running in development mode, Swagger documentation is available at:
 - Ensure the report exists and is deployed
 - Test with SSRS web interface first
 
-#### 3. **Session Management Issues**
+#### 5. **Session Management Issues**
 
 **Problem:** "Session identifier is missing" errors
 
@@ -752,7 +399,7 @@ When running in development mode, Swagger documentation is available at:
 - Ensure proper ExecutionHeader is included in requests
 - Check for network connectivity issues
 
-#### 4. **Parameter Validation Errors**
+#### 6. **Parameter Validation Errors**
 
 **Problem:** Invalid parameter errors when rendering
 
@@ -762,7 +409,7 @@ When running in development mode, Swagger documentation is available at:
 - Check for required parameters that are missing
 - Validate date formats (ISO 8601 recommended)
 
-#### 5. **Large Report Timeouts**
+#### 7. **Large Report Timeouts**
 
 **Problem:** Reports timeout during rendering
 
@@ -781,7 +428,8 @@ Enable detailed logging to troubleshoot issues:
   "Logging": {
     "LogLevel": {
       "Default": "Information",
-      "SSRSProxyApi.Services.SSRSService": "Debug"
+      "SSRSProxyApi.Services.SSRSService": "Debug",
+      "SSRSProxyApi.Services.UserInfoService": "Debug"
     }
   }
 }
@@ -790,6 +438,7 @@ Enable detailed logging to troubleshoot issues:
 This will log:
 - SOAP request/response content
 - Authentication details
+- Demo mode status
 - Step-by-step rendering process
 - Error details and stack traces
 
@@ -799,10 +448,11 @@ This will log:
 2. **Session Management**: Proper SSRS session handling reduces overhead
 3. **Async Operations**: All operations are asynchronous
 4. **Memory Optimization**: Streams are used for large report files
+5. **Conditional Authorization**: Minimal overhead for demo mode
 
 ## Deployment
 
-### IIS Deployment
+### IIS Deployment (Production)
 
 1. **Publish the application**
    ```bash
@@ -821,15 +471,18 @@ This will log:
    icacls "C:\inetpub\wwwroot\ssrs-proxy-api" /grant IIS_IUSRS:R /T
    ```
 
-### Docker Deployment
+4. **Production configuration**
+   ```json
+   {
+     "SSRS": {
+       "IsDemo": false,
+       "Authentication": {
+         "Type": "Windows"
+       }
+     }
+   }
+   ```
 
-```dockerfile
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY ./publish .
-EXPOSE 80
-EXPOSE 443
-ENTRYPOINT ["dotnet", "SSRSProxyApi.dll"]
 ```
 
 ### Environment Variables
@@ -841,39 +494,5 @@ For production deployment, use environment variables for sensitive configuration
 export SSRS__ReportServerUrl="http://prod-ssrs-server/ReportServer"
 export SSRS__Authentication__Username="ProductionServiceAccount"
 export SSRS__Authentication__Password="SecurePassword123"
+export SSRS__IsDemo="false"
 ```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](docs/CONTRIBUTING.md) for details.
-
-### Development Workflow
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass (`dotnet test`)
-6. Commit your changes (`git commit -am 'Add amazing feature'`)
-7. Push to the branch (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with [ASP.NET Core](https://docs.microsoft.com/en-us/aspnet/core/)
-- SOAP integration via [System.ServiceModel](https://docs.microsoft.com/en-us/dotnet/framework/wcf/)
-- Authentication powered by [Microsoft.AspNetCore.Authentication.Negotiate](https://docs.microsoft.com/en-us/aspnet/core/security/authentication/)
-
-## Support
-
-- **Documentation**: Check this README and inline code comments
-- **Issues**: Report bugs and request features via [GitHub Issues](https://github.com/yourusername/ssrs-proxy-api/issues)
-- **Discussions**: Join conversations in [GitHub Discussions](https://github.com/yourusername/ssrs-proxy-api/discussions)
-
----
-
-**Made with :heart: for the SSRS community**
